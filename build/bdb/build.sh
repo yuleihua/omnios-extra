@@ -13,7 +13,7 @@
 # }}}
 
 # Copyright 2011-2012 OmniTI Computer Consulting, Inc.  All rights reserved.
-# Copyright 2020 OmniOS Community Edition.  All rights reserved.
+# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
@@ -28,6 +28,8 @@ SKIP_LICENCES="Sleepycat"
 
 set_builddir db-$VER/build_unix
 
+forgo_isaexec
+
 OPREFIX=$PREFIX
 PREFIX+="/$PROG-$VER"
 
@@ -35,7 +37,7 @@ XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
-    -DVER=$VER
+    -DPKGROOT=$PROG-$VER
 "
 
 CONFIGURE_CMD="../dist/configure"
@@ -46,17 +48,14 @@ CONFIGURE_OPTS="
     --disable-static
 "
 CONFIGURE_OPTS_32="
-    --bindir=$PREFIX/bin/$ISAPART
-    --sbindir=$PREFIX/sbin/$ISAPART
     --libdir=$OPREFIX/lib
 "
 CONFIGURE_OPTS_64="
-    --bindir=$PREFIX/bin
-    --sbindir=$PREFIX/sbin
     --libdir=$OPREFIX/lib/$ISAPART64
 "
 
 LDFLAGS32+=" -L$OPREFIX/lib -R$OPREFIX/lib"
+[ $RELVER -ge 151037 ] && LDFLAGS32+=" -lssp_ns"
 LDFLAGS64+=" -L$OPREFIX/lib/$ISAPART64 -R$OPREFIX/lib/$ISAPART64"
 
 export EXTLIBS=-lm

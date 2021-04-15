@@ -12,15 +12,17 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=ooceapps
-VER=0.7.1
+VER=github-latest
 PKG=ooce/ooceapps
 SUMMARY="OOCEapps"
 DESC="Web integrations for OmniOS"
+
+set_arch 64
 
 set_mirror "$OOCEGITHUB/$PROG/releases/download"
 
@@ -32,13 +34,12 @@ RUN_DEPENDS_IPS="ooce/application/texlive"
 
 OPREFIX=$PREFIX
 PREFIX+="/$PROG"
+
 XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
 "
-
-set_arch 64
 
 CONFIGURE_OPTS_64="
     --prefix=$PREFIX
@@ -48,9 +49,11 @@ CONFIGURE_OPTS_64="
 
 add_extra_files() {
     # copy config template
-    logcmd cp $DESTDIR/etc/$PREFIX/$PROG.conf.dist \
-        $DESTDIR/etc/$PREFIX/$PROG.conf \
-        || logerr "--- cannot copy config file template"
+    for f in $PROG fenix; do
+        logcmd cp $DESTDIR/etc/$PREFIX/$f.conf.dist \
+            $DESTDIR/etc/$PREFIX/$f.conf \
+            || logerr "--- cannot copy $f"
+    done
 }
 
 init
@@ -59,7 +62,8 @@ patch_source
 prep_build
 build
 add_extra_files
-install_smf network ooceapps.xml
+install_smf ooce ooceapps.xml
+install_smf ooce fenix.xml
 make_package
 clean_up
 

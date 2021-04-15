@@ -12,7 +12,7 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2019 OmniOS Community Edition.  All rights reserved.
+# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
@@ -22,6 +22,9 @@ VER=1.9.2
 VERHUMAN=$VER
 SUMMARY="LZ4"
 DESC="Extremely fast compression"
+
+# lz4 was moved to omnios core from r151035 on
+[ $RELVER -ge 151035 ] && exit 0
 
 OPREFIX=$PREFIX
 PREFIX+=/$PROG

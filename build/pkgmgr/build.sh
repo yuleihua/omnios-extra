@@ -12,19 +12,17 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=pkgmgr
-VER=0.3.1
+VER=github-latest
 PKG=ooce/developer/pkgmgr
 SUMMARY="IPS package manager"
 DESC="IPS package management/publishing tool"
 
 set_mirror "$OOCEGITHUB/$PROG/releases/download"
-set_checksum sha256 \
-    35d4c118e1b8863c0461ff20f14d08640a4906abf3b226c567c12cbe1e62bd87
 
 RUN_DEPENDS_IPS="network/rsync"
 [ $RELVER -lt 151033 ] && RUN_DEPENDS_IPS+=" runtime/perl-64"
@@ -38,6 +36,7 @@ XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
+    -DPKGROOT=$PROG
 "
 
 CONFIGURE_OPTS_64="
@@ -47,7 +46,8 @@ CONFIGURE_OPTS_64="
 
 copy_config() {
     # copy config template
-    logcmd cp $DESTDIR/etc$PREFIX/$PROG.conf.dist $DESTDIR/etc$PREFIX/$PROG.conf \
+    logcmd cp $DESTDIR/etc$PREFIX/$PROG.conf.dist \
+        $DESTDIR/etc$PREFIX/$PROG.conf \
         || logerr "--- cannot copy config file template"
 }
 

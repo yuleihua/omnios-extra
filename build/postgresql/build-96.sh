@@ -13,13 +13,13 @@
 # }}}
 
 # Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=postgresql
 PKG=ooce/database/postgresql-96
-VER=9.6.18
+VER=9.6.21
 SUMMARY="PostgreSQL 9.6"
 DESC="The World's Most Advanced Open Source Relational Database"
 
@@ -46,6 +46,8 @@ XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
+    -DPKGROOT=pgsql-$MAJVER
+    -DMEDIATOR=$PROG -DMEDIATOR_VERSION=$MAJVER
     -DVERSION=$MAJVER
     -DsVERSION=$sMAJVER
 "
@@ -77,8 +79,9 @@ patch_source
 prep_build
 build
 #run_testsuite check-world
-install_smf database $PROG-$sMAJVER.xml
-make_package
+xform files/postgres.xml > $TMPDIR/$PROG-$sMAJVER.xml
+install_smf ooce $PROG-$sMAJVER.xml
+make_package server.mog
 clean_up
 
 # Vim hints

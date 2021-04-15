@@ -12,18 +12,18 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition.  All rights reserved.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=gh
 PKG=ooce/util/gh
-VER=0.10.1
+VER=1.8.1
 SUMMARY="github-cli"
 DESC="The GitHub CLI tool"
 
 set_arch 64
-set_gover 1.14
+set_gover 1.16
 
 GOOS=illumos
 GOARCH=amd64
@@ -31,21 +31,14 @@ export GOOS GOARCH
 
 RUN_DEPENDS_IPS="developer/versioning/git"
 
-build() {
-    pushd $TMPDIR/$BUILDDIR > /dev/null
-
-    logmsg "Building 64-bit"
-    logcmd $MAKE || logerr "Build failed"
-
-    popd >/dev/null
-}
+CONFIGURE_CMD="/bin/true"
+MAKE_INSTALL_ARGS="prefix=$PREFIX"
 
 init
 clone_go_source cli cli v$VER
 patch_source
 prep_build
-build
-install_go bin/$PROG
+build -noctf
 make_package
 clean_up
 

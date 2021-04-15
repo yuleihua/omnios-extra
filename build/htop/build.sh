@@ -12,36 +12,27 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition.  All rights reserved.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=htop
 PKG=ooce/system/htop
-VER=2.2.0
+VER=3.0.5
 SUMMARY="htop"
 DESC="An interactive process viewer for Unix"
 
-OPREFIX=$PREFIX
-PREFIX+=/$PROG
-
 set_arch 64
 
-XFORM_ARGS="
-    -DPREFIX=${PREFIX#/}
-    -DOPREFIX=${OPREFIX#/}
-    -DPROG=$PROG
-    -DVERSION=$VER
-"
+# need stack_t, timestruc_t, label_t, ...
+set_standard XPG6
 
-CONFIGURE_OPTS_64="
-    --prefix=$PREFIX
-"
+XFORM_ARGS="-DPREFIX=${PREFIX#/}"
 
 init
-download_source $PROG $PROG $VER
+download_source $PROG $VER
 patch_source
-prep_build
+prep_build "" -autoreconf
 build
 make_package
 clean_up

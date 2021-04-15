@@ -1,0 +1,216 @@
+//
+// Refer to the named.conf(5) and named(8) man pages, and the documentation
+// at https://kb.isc.org/docs/aa-01031 for more details.
+//
+// If you are going to set up an authoritative server, make sure you
+// understand the hairy details of how DNS works.  Even with
+// simple mistakes, you can break connectivity for affected parties,
+// or cause huge amounts of useless Internet traffic.
+
+options {
+        // All file and path names are relative to the chroot directory,
+        // if any, and should be fully qualified.
+        directory       "/$(VARPATH)";
+        pid-file        "run/named.pid";
+        dump-file       "dump/named_dump.db";
+        statistics-file "stats/named.stats";
+
+// If named is being used only as a local resolver, this is a safe default.
+// For named to be accessible to the network, comment this option, specify
+// the proper IP address, or delete this option.
+        listen-on       { 127.0.0.1; };
+
+// If you have IPv6 enabled on this system, uncomment this option for
+// use as a local resolver.  To give access to the network, specify
+// an IPv6 address, or the keyword "any".
+//      listen-on-v6    { ::1; };
+
+// These zones are already covered by the rfc.zones file.
+// If you do not include the rfc.zones file, comment these lines out.
+        disable-empty-zone "255.255.255.255.IN-ADDR.ARPA";
+        disable-empty-zone "0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.IP6.ARPA";
+        disable-empty-zone "1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.IP6.ARPA";
+
+// If you've got a DNS server around at your upstream provider, enter
+// its IP address here, and enable the line below.  This will make you
+// benefit from its cache, thus reduce overall DNS traffic in the Internet.
+/*
+        forwarders {
+                127.0.0.1;
+        };
+*/
+
+// If the 'forwarders' clause is not empty the default is to 'forward first'
+// which will fall back to sending a query from your local server if the name
+// servers in 'forwarders' do not have the answer.  Alternatively you can
+// force your name server to never initiate queries of its own by enabling the
+// following line:
+//      forward only;
+
+        /*
+           Modern versions of BIND use a random UDP port for each outgoing
+           query by default in order to dramatically reduce the possibility
+           of cache poisoning.  All users are strongly encouraged to utilize
+           this feature, and to configure their firewalls to accommodate it.
+
+           AS A LAST RESORT in order to get around a restrictive firewall
+           policy you can try enabling the option below.  Use of this option
+           will significantly reduce your ability to withstand cache poisoning
+           attacks, and should be avoided if at all possible.
+
+           Replace NNNNN in the example with a number between 49160 and 65530.
+        */
+        // query-source address * port NNNNN;
+};
+
+// If you enable a local name server, don't forget to enter 127.0.0.1
+// first in your /etc/resolv.conf so this server will be queried.
+
+// Enable rndc administration on loopback interface.
+include "/$(CONFPATH)/rndc.key";
+controls {
+      inet 127.0.0.1 port 953
+      allow { 127.0.0.1; } keys { "rndc-key"; };
+};
+
+// Default logging directs to syslog. If you prefer to log to a flat file
+// uncomment the following section.
+//
+// More info on logging can be found at: https://kb.isc.org/docs/aa-01526
+
+/*
+logging {
+     channel default_log {
+          file "/var/log/$(OPREFIX)/named/default" versions 3 size 20m;
+          print-time yes;
+          print-category yes;
+          print-severity yes;
+          severity info;
+     };
+     category queries { default_log; };
+     category default { default_log; };
+     category config { default_log; };
+};
+*/
+
+// The traditional root hints mechanism. Use this, OR the slave zones below.
+zone "." { type hint; file "namedb/named.root"; };
+
+/*      Slaving the following zones from the root name servers has some
+        significant advantages:
+        1. Faster local resolution for your users
+        2. No spurious traffic will be sent from your network to the roots
+        3. Greater resilience to any potential root server failure/DDoS
+
+        On the other hand, this method requires more monitoring than the
+        hints file to be sure that an unexpected failure mode has not
+        incapacitated your server.  Name servers that are serving a lot
+        of clients will benefit more from this approach than individual
+        hosts.  Use with caution.
+
+        To use this mechanism, uncomment the entries below, and comment
+        the hint zone above.
+
+        As documented at http://dns.icann.org/services/axfr/ these zones:
+        "." (the root), ARPA, IN-ADDR.ARPA, IP6.ARPA, and a few others
+        are available for AXFR from these servers on IPv4 and IPv6:
+        xfr.lax.dns.icann.org, xfr.cjr.dns.icann.org
+*/
+
+/*
+zone "." {
+        type slave;
+        file "namedb/slave/root.slave";
+        masters {
+                192.0.32.132;           // lax.xfr.dns.icann.org
+                2620:0:2d0:202::132;    // lax.xfr.dns.icann.org
+                192.0.47.132;           // iad.xfr.dns.icann.org
+                2620:0:2830:202::132;   // iad.xfr.dns.icann.org
+        };
+        notify no;
+};
+zone "arpa" {
+        type slave;
+        file "namedb/slave/arpa.slave";
+        masters {
+                192.0.32.132;           // lax.xfr.dns.icann.org
+                2620:0:2d0:202::132;    // lax.xfr.dns.icann.org
+                192.0.47.132;           // iad.xfr.dns.icann.org
+                2620:0:2830:202::132;   // iad.xfr.dns.icann.org
+        };
+        notify no;
+};
+zone "in-addr.arpa" {
+        type slave;
+        file "namedb/slave/in-addr.arpa.slave";
+        masters {
+                192.0.32.132;           // lax.xfr.dns.icann.org
+                2620:0:2d0:202::132;    // lax.xfr.dns.icann.org
+                192.0.47.132;           // iad.xfr.dns.icann.org
+                2620:0:2830:202::132;   // iad.xfr.dns.icann.org
+        };
+        notify no;
+};
+zone "ip6.arpa" {
+        type slave;
+        file "namedb/slave/ip6.arpa.slave";
+        masters {
+                192.0.32.132;           // lax.xfr.dns.icann.org
+                2620:0:2d0:202::132;    // lax.xfr.dns.icann.org
+                192.0.47.132;           // iad.xfr.dns.icann.org
+                2620:0:2830:202::132;   // iad.xfr.dns.icann.org
+        };
+        notify no;
+};
+*/
+
+/*      Serving the following zones in rfc.zones prevents any queries
+        for these zones leaving your network and going to the root
+        name servers.  This has two significant advantages:
+        1. Faster local resolution for your users
+        2. No spurious traffic will be sent from your network to the roots
+*/
+include "/$(CONFPATH)/rfc.zones";
+
+// NB: Do not use the IP addresses below, they are faked, and only
+// serve demonstration/documentation purposes!
+//
+// Example slave zone config entries.  It can be convenient to become
+// a slave at least for the zone your own domain is in.  Ask
+// your network administrator for the IP address of the responsible
+// master name server.
+//
+// Do not forget to include the reverse lookup zone!
+// This is named after the first bytes of the IP address, in reverse
+// order, with ".IN-ADDR.ARPA" appended, or ".IP6.ARPA" for IPv6.
+//
+// Before starting to set up a master zone, make sure you fully
+// understand how DNS and BIND work.  There are sometimes
+// non-obvious pitfalls.  Setting up a slave zone is usually simpler.
+//
+// NB: Don't blindly enable the examples below. :-)  Use actual names
+// and addresses instead.
+
+/* An example dynamic zone
+key "exampleorgkey" {
+        algorithm hmac-md5;
+        secret "sf87HJqjkqh8ac87a02lla==";
+};
+zone "example.org" {
+        type master;
+        allow-update {
+                key "exampleorgkey";
+        };
+        file "namedb/dynamic/example.org";
+};
+*/
+
+/* Example of a slave reverse zone
+zone "1.168.192.in-addr.arpa" {
+        type slave;
+        file "namedb/slave/1.168.192.in-addr.arpa";
+        masters {
+                192.168.1.1;
+        };
+};
+*/

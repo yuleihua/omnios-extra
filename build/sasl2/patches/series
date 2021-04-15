@@ -1,0 +1,8 @@
+sql-quieter.patch
+ldapdb-quieter.patch
+configure-mysql.patch
+configure-pgsql.patch
+configure-ldap.patch
+filterlibs.patch
+saslauthd-man.patch
+saslauthd-perms.patch

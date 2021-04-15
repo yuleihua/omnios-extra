@@ -1,0 +1,64 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source. A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+
+# Restart fmri service
+<transform file path=$(PREFIX)/sbin/named \
+    -> set restart_fmri svc:/ooce/network/dns:named$(sVERSION)>
+
+# Set permissions for directories
+<transform file path=$(CONFPATH) -> set preserve renamenew>
+<transform dir  path=$(CONFPATH) -> set owner $(USER)>
+<transform dir  path=$(CONFPATH) -> set group $(GROUP)>
+<transform dir  path=$(CONFPATH) -> set mode 0770>
+<transform file  path=$(CONFPATH)/bind.keys -> set owner $(USER)>
+<transform file  path=$(CONFPATH)/bind.keys -> set group $(GROUP)>
+<transform file  path=$(CONFPATH)/bind.keys -> set mode 0660>
+<transform dir  path=var/$(OPREFIX)/named -> set owner $(USER)>
+<transform dir  path=var/$(OPREFIX)/named -> set group $(GROUP)>
+<transform dir  path=var/$(OPREFIX)/named -> set mode 0770>
+<transform dir  path=$(VARPATH) -> set owner $(USER)>
+<transform dir  path=$(VARPATH) -> set group $(GROUP)>
+<transform dir  path=$(VARPATH) -> set mode 0770>
+<transform dir  path=$(VARPATH)/run -> set owner $(USER)>
+<transform dir  path=$(VARPATH)/run -> set group $(GROUP)>
+<transform dir  path=$(VARPATH)/run -> set mode 0770>
+dir group=$(GROUP) mode=0770 owner=$(USER) path=$(VARPATH)/namedb
+dir group=$(GROUP) mode=0770 owner=$(USER) path=$(VARPATH)/namedb/master
+
+# Additional files
+file ../named-$(sVERSION).conf \
+	path=$(CONFPATH)/named.conf \
+	mode=0660 owner=$(USER) group=$(GROUP)
+file files/rfc.zones \
+	path=$(CONFPATH)/rfc.zones \
+	mode=0660 owner=$(USER) group=$(GROUP)
+file files/rndc.key \
+	path=$(CONFPATH)/rndc.key \
+	mode=0660 owner=$(USER) group=$(GROUP)
+file files/empty.db \
+	path=$(VARPATH)/namedb/empty.db \
+	mode=0660 owner=$(USER) group=$(GROUP)
+file files/localhost-forward.db \
+	path=$(VARPATH)/namedb/localhost-forward.db \
+	mode=0660 owner=$(USER) group=$(GROUP)
+file files/localhost-reverse.db \
+	path=$(VARPATH)/namedb/localhost-reverse.db \
+	mode=0660 owner=$(USER) group=$(GROUP)
+file files/named.root \
+	path=$(VARPATH)/namedb/named.root \
+	mode=0660 owner=$(USER) group=$(GROUP)
+
+<include mediated-binlink.mog>
+<include mediated-manlink.mog>
+
+license LICENSE license=MPLv2
+

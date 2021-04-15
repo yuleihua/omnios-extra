@@ -35,8 +35,8 @@ umask 022
 # scripts
 #############################################################################
 
-BASEPATH=/usr/ccs/bin:/usr/bin:/usr/sbin:/usr/gnu/bin:/usr/sfw/bin:/opt/ooce/bin
-export PATH=$BASEPATH
+# Set a basic path - it will be modified once config.sh is loaded
+PATH=/usr/bin:/usr/sbin:/usr/gnu/bin
 
 #############################################################################
 # Process command line options
@@ -57,7 +57,7 @@ process_opts() {
     SKIP_TESTSUITE=
     SKIP_CHECKSUM=
     EXTRACT_MODE=0
-    while getopts "bcDiPptsf:ha:d:Llr:x" opt; do
+    while getopts "bciPptsf:ha:d:Llr:x" opt; do
         case $opt in
             h)
                 show_usage
@@ -133,7 +133,6 @@ Usage: $0 [-blt] [-f FLAVOR] [-h] [-a 32|64|both] [-d DEPVER]
   -b        : batch mode (exit on errors without asking)
   -c        : use 'ccache' to speed up (re-)compilation
   -d DEPVER : specify an extra dependency version (no default)
-  -D        : collect package diff output in batch mode
   -f FLAVOR : build a specific package flavor
   -h        : print this help text
   -i        : autoinstall mode (install build deps)
@@ -283,13 +282,13 @@ ask_to_install() {
 }
 
 ask_to_pkglint() {
-    ask_to_continue_ "" "Do you want to run pkglint at this time?" \
+    ask_to_continue_ "" "Do you want to run pkglint?" \
         "y/n" "[yYnN]"
     [[ "$REPLY" == "y" || "$REPLY" == "Y" ]]
 }
 
 ask_to_testsuite() {
-    ask_to_continue_ "" "Do you want to run the test-suite at this time?" \
+    ask_to_continue_ "" "Do you want to run the test-suite?" \
         "y/n" "[yYnN]"
     [[ "$REPLY" == "y" || "$REPLY" == "Y" ]]
 }
@@ -320,6 +319,12 @@ ord26() {
     echo $ASCII
 }
 
+set_coredir() {
+    # Change the core pattern so that core files contain all available
+    # information and are stored centrally in the provided directory
+    coreadm -P all -p $1/core.%f.%t
+}
+
 #############################################################################
 # Some initialization
 #############################################################################
@@ -339,10 +344,19 @@ SRCDIR=$PWD/`dirname $0`
 [ -f $MYDIR/site.sh ] && . $MYDIR/site.sh
 BASE_TMPDIR=$TMPDIR
 
+set_coredir $TMPDIR
+
+BASEPATH=/usr/ccs/bin:$USRBIN:/usr/sbin:$OOCEBIN:$GNUBIN:$SFWBIN
+export PATH=$BASEPATH
+
 # Platform information, e.g. 5.11
 SUNOSVER=`uname -r`
 
+MYSCRIPT=${BASH_SOURCE[1]##*/}
+[[ $MYSCRIPT = build*.sh ]] && LOGFILE=$PWD/${MYSCRIPT/%.sh/.log}
+
 [ -f "$LOGFILE" ] && mv $LOGFILE $LOGFILE.1
+
 process_opts $@
 shift $((OPTIND - 1))
 
@@ -388,6 +402,23 @@ init_tools
 # Compiler version
 #############################################################################
 
+SSPFLAGS=
+set_ssp() {
+    [ $RELVER -lt 151037 ] && return
+    case "$1" in
+        none)   SSPFLAGS=; SKIP_SSP_CHECK=1 ;;
+        strong) SSPFLAGS="-fstack-protector-strong" ;;
+        basic)  SSPFLAGS="-fstack-protector" ;;
+        all)    SSPFLAGS="-fstack-protector-all" ;;
+        *)      logerr "Unknown stack protector variant ($1)" ;;
+    esac
+    local LCFLAGS=`echo $CFLAGS | sed 's/-fstack-protector[^ ]*//'`
+    local LCXXFLAGS=`echo $CXXFLAGS | sed 's/-fstack-protector[^ ]*//'`
+    CFLAGS="$LCFLAGS $SSPFLAGS"
+    CXXFLAGS="$LCFLAGS $SSPFLAGS"
+    [ -z "$2" ] && logmsg "-- Set stack protection to '$1'"
+}
+
 set_gccver() {
     GCCVER="$1"
     [ -z "$2" ] && logmsg "-- Setting GCC version to $GCCVER"
@@ -404,6 +435,8 @@ set_gccver() {
 
     CFLAGS="${FCFLAGS[_]} ${FCFLAGS[$GCCVER]}"
     CXXFLAGS="${FCFLAGS[_]} ${FCFLAGS[$GCCVER]}"
+
+    set_ssp strong $2
 }
 
 set_gccver $DEFAULT_GCC_VER -q
@@ -420,6 +453,8 @@ set_gover() {
     GOROOT_BOOTSTRAP="$GO_PATH"
     # go binaries contain BMI instructions even when built on an older CPU
     BMI_EXPECTED=1
+    # skip rtime check for go builds
+    SKIP_RTIME_CHECK=1
     export PATH GOROOT_BOOTSTRAP
 
     BUILD_DEPENDS_IPS+=" ooce/developer/go-${GOVER//./}"
@@ -432,7 +467,7 @@ set_gover() {
 set_nodever() {
     NODEVER="$1"
     logmsg "-- Setting node.js version to $NODEVER"
-    NODDEPATH="/opt/ooce/node-$NODEVER"
+    NODEPATH="/opt/ooce/node-$NODEVER"
     PATH="$NODEPATH/bin:$PATH"
     export PATH
 
@@ -460,7 +495,7 @@ set_rubyver() {
 reset_configure_opts() {
     # If it's the global default (/usr), we want sysconfdir to be /etc
     # otherwise put it under PREFIX
-    [ $PREFIX = "/usr" ] && SYSCONFDIR=/etc || SYSCONFDIR=$PREFIX/etc
+    [ $PREFIX = "/usr" ] && SYSCONFDIR=/etc || SYSCONFDIR=/etc$PREFIX
 
     CONFIGURE_OPTS_32="
         --prefix=$PREFIX
@@ -476,7 +511,12 @@ reset_configure_opts() {
             --libdir=$PREFIX/lib
             --libexecdir=$PREFIX/libexec
         "
-        CONFIGURE_OPTS_64="$CONFIGURE_OPTS_32"
+        CONFIGURE_OPTS_64+="
+            --bindir=$PREFIX/bin
+            --sbindir=$PREFIX/sbin
+            --libdir=$PREFIX/lib/$ISAPART64
+            --libexecdir=$PREFIX/libexec/$ISAPART64
+        "
     else
         CONFIGURE_OPTS_32+="
             --bindir=$PREFIX/bin/$ISAPART
@@ -495,8 +535,11 @@ reset_configure_opts() {
 reset_configure_opts
 
 set_standard() {
-    [ -n "${STANDARDS[$1]}" ] || logerr "Unknown standard $1"
-    CPPFLAGS+=" ${STANDARDS[$1]}"
+    typeset st="$1"
+    typeset var="${2:-CPPFLAGS}"
+    [ -n "${STANDARDS[$st]}" ] || logerr "Unknown standard $st"
+    declare -n _var=$var
+    _var+=" ${STANDARDS[$st]}"
 }
 
 forgo_isaexec() {
@@ -579,10 +622,11 @@ trap 'build_end' EXIT
 #############################################################################
 
 libtool_nostdlib() {
-    FILE=$1
-    EXTRAS=$2
-    logcmd perl -pi -e 's#(\$CC.*\$compiler_flags)#$1 -nostdlib '"$EXTRAS"'#g;' $FILE ||
-        logerr "--- Patching libtool:$FILE for -nostdlib support failed"
+    FILE="$1"
+    EXTRAS="$2"
+    logcmd perl -pi -e \
+        's#(\$CC.*\$compiler_flags)#$1 -nostdlib '"$EXTRAS"'#g;' $FILE \
+        || logerr "--- Patching libtool:$FILE for -nostdlib support failed"
 }
 
 #############################################################################
@@ -599,6 +643,29 @@ init_repo() {
                 logerr "Could not set publisher on local repo"
         fi
     fi
+}
+
+github_latest() {
+    logmsg "-- Retrieving latest release version from github"
+
+    [[ $MIRROR = $GITHUB/* ]] \
+        || logerr "Cannot use github latest without github mirror"
+
+    local repoprog=`echo $MIRROR | cut -d/ -f4-5`
+    local ep=$GITHUBAPI/repos/$repoprog/releases
+
+    local filter="map(select (.draft == false)"
+    if [ "$VER" != github-latest-prerelease ]; then
+        filter+=" | select (.prerelease == false)"
+    fi
+    filter+=") | first | .tag_name"
+
+    local tag=`$CURL -s $ep | $JQ -r "$filter"`
+    [ -n "$tag" -a "$tag" != "null" ] \
+        || logerr "--- Could not retrieve latest version from github"
+
+    VER="${tag#v}"
+    logmsg "--- Github release $tag, set VER=$VER"
 }
 
 init() {
@@ -633,6 +700,8 @@ init() {
         logerr "DESC may not be empty. Please update your build script"
     fi
 
+    [[ "$VER" = github-latest* ]] && github_latest
+
     # Blank out the source code location
     _ARC_SOURCE=
 
@@ -652,6 +721,9 @@ init() {
     [ "$TMPDIR" = "$BASE_TMPDIR" ] && TMPDIR="$BASE_TMPDIR/$PROG-$VER"
     [ "$DTMPDIR" = "$BASE_TMPDIR" ] && DTMPDIR="$TMPDIR"
 
+    # Update the core file directory
+    set_coredir $TMPDIR
+
     init_repo
     pkgrepo get -s $PKGSRVR > /dev/null 2>&1 || \
         logerr "The PKGSRVR ($PKGSRVR) isn't available. All is doomed."
@@ -667,8 +739,8 @@ init() {
     logcmd mkdir -p $TMPDIR
     [ -h $SRCDIR/tmp ] && rm -f $SRCDIR/tmp
     logcmd ln -sf $TMPDIR $SRCDIR/tmp
-    [ -h $SRCDIR/tmp/src ] && rm -f $SRCDIR/tmp/src
-    logcmd ln -sf $BUILDDIR $SRCDIR/tmp/src
+    [ -h $TMPDIR/src ] && rm -f $TMPDIR/src
+    logcmd ln -sf $BUILDDIR $TMPDIR/src
 }
 
 set_builddir() {
@@ -693,9 +765,8 @@ verify_depends() {
     if [ -z "$BUILD_DEPENDS_IPS" -a -n "$DEPENDS_IPS" ]; then
         BUILD_DEPENDS_IPS=$DEPENDS_IPS
     fi
-    # add go as a build dependency if $GOVER is set
-    [ -n "$GOVER" ] && BUILD_DEPENDS_IPS+=" ooce/developer/go-${GOVER//./}"
     for i in $BUILD_DEPENDS_IPS; do
+        logmsg "-- Checking for build dependency $i"
         # Trim indicators to get the true name (see make_package for details)
         case ${i:0:1} in
             \=|\?)
@@ -705,13 +776,13 @@ verify_depends() {
                 # If it's an exclude, we should error if it's installed rather
                 # than missing
                 i=${i:1}
-                pkg info $i > /dev/null 2<&1 && \
-                    logerr "--- $i should not be installed during build."
+                logcmd pkg info -q $i \
+                    && logerr "--- $i should not be installed during build."
                 continue
                 ;;
         esac
-        pkg info $i > /dev/null 2<&1 ||
-            ask_to_install "$i" "--- Build-time dependency $i not found"
+        logcmd pkg info -q $i \
+            || ask_to_install "$i" "--- Build-time dependency $i not found"
     done
 }
 
@@ -737,16 +808,23 @@ run_aclocal() { run_inbuild aclocal "$@"; }
 #############################################################################
 
 prep_build() {
-    typeset style=${1:-autoconf}
-    typeset flags="$2"
+    typeset style=${1:-autoconf}; shift
 
-    for flag in "$flags"; do
+    for flag in "$@"; do
         case $flag in
             -oot)
                 OUT_OF_TREE_BUILD=1
                 ;;
             -keep)
                 DONT_REMOVE_INSTALL_DIR=1
+                ;;
+            -autoreconf)
+                [ $style = autoconf ] \
+                    || logerr "-autoreconf is only valid for autoconf builds"
+                RUN_AUTORECONF=1
+                ;;
+            -*)
+                logerr "Unknown prep_build flag - $flag"
                 ;;
         esac
     done
@@ -781,8 +859,10 @@ prep_build() {
             ;;
         meson)
             OUT_OF_TREE_BUILD=1
-            MAKE="$MESON_MAKE"
-            TESTSUITE_MAKE="$MESON_MAKE"
+            MULTI_BUILD=1
+            MAKE="$NINJA"
+            TESTSUITE_MAKE="$NINJA"
+            MAKE_TESTSUITE_ARGS=
             CONFIGURE_CMD="$PYTHONLIB/python$PYTHONVER/bin/meson setup"
             CONFIGURE_CMD+=" $TMPDIR/$BUILDDIR"
             ;;
@@ -796,11 +876,11 @@ prep_build() {
     fi
 
     # Create symbolic links to build area
-    [ -h $SRCDIR/tmp/build ] && rm -f $SRCDIR/tmp/build
-    logcmd ln -sf $BUILDDIR $SRCDIR/tmp/build
+    [ -h $TMPDIR/build ] && rm -f $TMPDIR/build
+    logcmd ln -sf $BUILDDIR $TMPDIR/build
     # ... and to DESTDIR
-    [ -h $SRCDIR/tmp/pkg ] && rm -f $SRCDIR/tmp/pkg
-    logcmd ln -sf $DESTDIR $SRCDIR/tmp/pkg
+    [ -h $TMPDIR/pkg ] && rm -f $TMPDIR/pkg
+    logcmd ln -sf ${DESTDIR##*/} $TMPDIR/pkg
 }
 
 #############################################################################
@@ -987,7 +1067,7 @@ verify_checksum() {
 #
 # E.g.
 #       download_source myprog myprog 1.2.3 will try:
-#       http://mirrors.omniosce.org/myprog/myprog-1.2.3.tar.gz
+#       http://mirrors.omnios.org/myprog/myprog-1.2.3.tar.gz
 download_source() {
     local DLDIR="$1"; shift
     local PROG="$1"; shift
@@ -1030,7 +1110,7 @@ download_source() {
     else
         logmsg "--- Found $FILENAME"
     fi
-    _ARC_SOURCE+="${_ARC_SOURCE:+ }$DLDIR/$FILENAME"
+    _ARC_SOURCE+="${_ARC_SOURCE:+ }$SRCMIRROR/$DLDIR/$FILENAME"
 
     # Fetch and verify the archive checksum
     [ -z "$SKIP_CHECKSUM" ] && verify_checksum
@@ -1134,7 +1214,9 @@ clone_github_source() {
         logcmd $GIT -C $prog clean -fdx
     fi
 
-    $GIT -C $prog show --shortstat
+    $GIT -C $prog --no-pager show --shortstat
+
+    _ARC_SOURCE+="${_ARC_SOURCE:+ }$src/tree/$branch"
 
     popd > /dev/null
 }
@@ -1210,64 +1292,172 @@ EOM
 }
 
 pkgmeta() {
-    echo set name=$1 value=\"$2\"
+    typeset key="$1"
+    typeset val="$2"
+
+    [[ $key = info.source-url* && ! $val = *://* ]] \
+        && val="$SRCMIRROR/$val"
+    echo set name=$key value=\"$val\"
+}
+
+# Start building a partial manifest
+#   manifest_start <filename>
+manifest_start() {
+    PARTMF="$1"
+    SEEDMF=$TMPDIR/manifest.seed
+    :>$PARTMF
+    generate_manifest $SEEDMF
+}
+
+# Add a directory, and the files directly underneath, to a partial manifest.
+# Optional arguments indicate sub-directories to recurse one level into.
+#   manifest_add_dir <directory> [subdir]...
+manifest_add_dir() {
+    typeset dir=${1#/}; shift
+    logmsg "---- Adding dir '$dir'"
+    (
+        $RIPGREP "^dir.* path=$dir(\$|\\s)" $SEEDMF
+        $RIPGREP "^(file|link|hardlink).* path=$dir/[^/]+(\$|\\s)" $SEEDMF
+    ) >> $PARTMF
+    for d in "$@"; do
+        manifest_add_dir "$dir/$d"
+    done
+}
+
+# Add a file/link/hardlink to a partial manifest.
+#   manifest_add <directory> <pattern> [pattern]...
+manifest_add() {
+    typeset dir=${1#/}; shift
+
+    for f in "$@"; do
+        $RIPGREP "^(file|link|hardlink).* path=$dir/$f(\$|\\s)" $SEEDMF
+    done >> $PARTMF
+}
+
+# Finalise a partial manifest.
+# Takes care of adding any necessary 'dir' actions to support files which
+# have been added and sorts the result, removing duplicate lines. Only
+# directories under one of the provided prefixes are included
+#   manifest_finalise <prefix> [prefix]...
+manifest_finalise() {
+    typeset tf=`mktemp`
+    logcmd cp $PARTMF $tf
+
+    typeset prefix
+    for prefix in "$@"; do
+        prefix=${prefix#/}
+        logmsg "--- determining implicit directories for $prefix"
+        $RIPGREP "^dir.* path=$prefix(\$|\\s)" $SEEDMF >> $tf
+        $RIPGREP "(file|link|hardlink).* path=$prefix/" $PARTMF \
+            | sed "
+                s^.*path=$prefix/^^
+                s^/[^/]*$^^
+        " | sort -u | while read dir; do
+            logmsg "---- $dir"
+            while :; do
+                $RIPGREP "^dir.* path=$prefix/$dir(\$|\\s)" $SEEDMF >> $tf
+                [[ $dir = */* ]] || break
+                dir=`dirname $dir`
+            done
+        done
+    done
+    sort -u < $tf > $PARTMF
+    rm -f $tf
+}
+
+# Create a manifest file containing all of the lines that are not present
+# in the manifests given.
+#   manifest_uniq <new manifest> <old manifest> [old manifest]...
+manifest_uniq() {
+    typeset dst="$1"; shift
+
+    typeset tf=`mktemp`
+    typeset mftmp=`mktemp`
+    typeset seedtmp=`mktemp`
+    sort -u < $SEEDMF > $seedtmp
+
+    for mf in "$@"; do
+        sort -u < $mf > $mftmp
+        logcmd -p comm -13 $mftmp $seedtmp > $tf
+        logcmd mv $tf $seedtmp
+    done
+    logcmd mv $seedtmp $dst
+    rm -f $tf $mftmp
+}
+
+generate_manifest() {
+    typeset outf="$1"
+
+    [ -n "$DESTDIR" -a -d "$DESTDIR" ] || logerr "DESTDIR does not exist"
+
+    check_symlinks "$DESTDIR"
+    if [ -z "$BATCH" ]; then
+        [ $RELVER -ge 151033 -a -z "$SKIP_RTIME_CHECK" ] && check_rtime
+        [ $RELVER -ge 151037 -a -z "$SKIP_SSP_CHECK" ] && check_ssp
+    fi
+    check_bmi
+    logmsg "--- Generating package manifest from $DESTDIR"
+    typeset GENERATE_ARGS=
+    if [ -n "$HARDLINK_TARGETS" ]; then
+        for f in $HARDLINK_TARGETS; do
+            GENERATE_ARGS+="--target $f "
+        done
+    fi
+    logcmd -p $PKGSEND generate $GENERATE_ARGS $DESTDIR > $outf \
+        || logerr "------ Failed to generate manifest"
 }
 
 make_package() {
     logmsg "-- building package $PKG"
+
+    PKGE=`url_encode $PKG`
+
+    typeset seed_manifest=
+    typeset -i legacy=0
+    while [[ "$1" = -* ]]; do
+        case "$1" in
+            -seed)  [ -n "$2" -a -f "$2" ] \
+                        || logerr "Seed manifest '$2' not found"
+                    seed_manifest=$2; shift
+                    ;;
+            -legacy) legacy=1 ;;
+            *)      logerr "Unknown option to make_package - $1" ;;
+        esac
+        shift
+    done
+
+    [ -z "$LOCAL_MOG_FILE" -a -f $SRCDIR/local.mog ] && LOCAL_MOG_FILE=local.mog
+    typeset EXTRA_MOG_FILE="$1"
+    typeset FINAL_MOG_FILE="$2"
+    [[ -n "$LOCAL_MOG_FILE" && ! "$LOCAL_MOG_FILE" = /* ]] \
+        && LOCAL_MOG_FILE="$SRCDIR/$LOCAL_MOG_FILE"
+    [[ -n "$EXTRA_MOG_FILE" && ! "$EXTRA_MOG_FILE" = /* ]] \
+        && EXTRA_MOG_FILE="$SRCDIR/$EXTRA_MOG_FILE"
+    [[ -n "$FINAL_MOG_FILE" && ! "$FINAL_MOG_FILE" = /* ]] \
+        && FINAL_MOG_FILE="$SRCDIR/$FINAL_MOG_FILE"
+
     case $BUILDARCH in
-        32)
-            BUILDSTR="32bit-"
-            ;;
-        64)
-            BUILDSTR="64bit-"
-            ;;
-        *)
-            BUILDSTR=""
-            ;;
+        32) BUILDSTR="32bit-" ;;
+        64) BUILDSTR="64bit-" ;;
+        *) BUILDSTR="" ;;
     esac
-    # Add the flavor name to the package if it is not the default
     case $FLAVOR in
-        ""|default)
-            FLAVORSTR=""
-            ;;
-        *)
-            FLAVORSTR="$FLAVOR-"
-            ;;
+        ""|default) FLAVORSTR="" ;;
+        *) FLAVORSTR="$FLAVOR-" ;;
     esac
     DESCSTR="$DESC"
-    if [ -n "$FLAVORSTR" ]; then
-        DESCSTR="$DESCSTR ($FLAVOR)"
-    fi
+    [ -n "$FLAVORSTR" ] && DESCSTR="$DESCSTR ($FLAVOR)"
     # Add the local dash-revision if specified.
     [ $RELVER -ge 151027 ] && PVER=$RELVER.$DASHREV || PVER=$DASHREV.$RELVER
+
+    # Temporary file paths
     P5M_INT=$TMPDIR/${PKGE}.p5m.int
     P5M_INT2=$TMPDIR/${PKGE}.p5m.int.2
     P5M_INT3=$TMPDIR/${PKGE}.p5m.int.3
     P5M_FINAL=$TMPDIR/${PKGE}.p5m
     MANUAL_DEPS=$TMPDIR/${PKGE}.deps.mog
-    GLOBAL_MOG_FILE=$MYDIR/global-transforms.mog
+    GLOBAL_MOG_FILE=$MYDIR/mog/global-transforms.mog
     MY_MOG_FILE=$TMPDIR/${PKGE}.mog
-    if [ -z "$LOCAL_MOG_FILE" ]; then
-        [ -f $SRCDIR/local.mog ] && \
-            LOCAL_MOG_FILE=$SRCDIR/local.mog || LOCAL_MOG_FILE=
-    fi
-    EXTRA_MOG_FILE=
-    FINAL_MOG_FILE=
-    if [ -n "$1" ]; then
-            if [[ "$1" = /* ]]; then
-                EXTRA_MOG_FILE="$1"
-            else
-                EXTRA_MOG_FILE="$SRCDIR/$1"
-            fi
-    fi
-    if [ -n "$2" ]; then
-            if [[ "$2" = /* ]]; then
-                FINAL_MOG_FILE="$2"
-            else
-                FINAL_MOG_FILE="$SRCDIR/$2"
-            fi
-    fi
 
     # Version cleanup
 
@@ -1284,7 +1474,7 @@ make_package() {
     fi
 
     ## Strip leading zeros in version components.
-    VER=`echo $VER | sed -e 's/\.0*\([1-9]\)/.\1/g;'`
+    VER=`echo $VER | sed -e 's/\.0*\([0-9]\)/.\1/g;'`
 
     [ "$VER" = "$_VER" ] || logmsg "--- Converted version '$_VER'  -> '$VER'"
 
@@ -1294,25 +1484,17 @@ make_package() {
     else
         FMRI="${PKG}@${VER},${SUNOSVER}-${PVER}"
     fi
-    if [ -n "$DESTDIR" ]; then
-        check_symlinks "$DESTDIR"
-        [ -z "$BATCH" ] && check_libabi "$DESTDIR" "$PKG"
-        [ -z "$BATCH" ] && [ $RELVER -ge 151033 ] && check_rtime "$DESTDIR"
-        check_bmi "$DESTDIR"
-        logmsg "--- Generating package manifest from $DESTDIR"
-        GENERATE_ARGS=
-        if [ -n "$HARDLINK_TARGETS" ]; then
-            for f in $HARDLINK_TARGETS; do
-                GENERATE_ARGS+="--target $f "
-            done
-        fi
-        logcmd -p $PKGSEND generate $GENERATE_ARGS $DESTDIR > $P5M_INT || \
-            logerr "------ Failed to generate manifest"
+
+    if [ -n "$seed_manifest" ]; then
+        logcmd cp $seed_manifest $P5M_INT || logerr "seed copy failed"
+    elif [ -n "$DESTDIR" ]; then
+        generate_manifest $P5M_INT
     else
         logmsg "--- Looks like a meta-package. Creating empty manifest"
         logcmd touch $P5M_INT || \
             logerr "------ Failed to create empty manifest"
     fi
+    [ -z "$BATCH" ] && check_libabi "$PKG" "$P5M_INT"
 
     # Package metadata
     logmsg "--- Generating package metadata"
@@ -1327,20 +1509,22 @@ make_package() {
         pkgmeta pkg.description     "$DESCSTR"
         pkgmeta publisher           "$PUBLISHER_EMAIL"
         pkgmeta pkg.human-version   "$VERHUMAN"
+        [ $legacy -eq 1 -a $RELVER -ge 151035 ] \
+            && pkgmeta pkg.legacy true
         if [[ $_ARC_SOURCE = *\ * ]]; then
             _asindex=0
             for _as in $_ARC_SOURCE; do
-                pkgmeta "info.source-url.$_asindex" "$SRCMIRROR/$_as"
+                pkgmeta "info.source-url.$_asindex" "$_as"
                 ((_asindex++))
             done
         elif [ -n "$_ARC_SOURCE" ]; then
-            pkgmeta info.source-url "$SRCMIRROR/$_ARC_SOURCE"
+            pkgmeta info.source-url "$_ARC_SOURCE"
         fi
     ) > $MY_MOG_FILE
 
     # Transforms
     logmsg "--- Applying transforms"
-    logcmd -p $PKGMOGRIFY \
+    logcmd -p $PKGMOGRIFY -I $MYDIR/mog \
         $XFORM_ARGS \
         $P5M_INT \
         $MY_MOG_FILE \
@@ -1382,7 +1566,10 @@ make_package() {
                 \=)
                     DEPTYPE="incorporate"
                     i=${i:1}
-                    EXTRA=" facet.version-lock.$i=true"
+                    shopt -s extglob
+                    typeset facet=${i##pkg:+(/)}
+                    facet=${facet%@*}
+                    EXTRA=" facet.version-lock.$facet=true"
                     ;;
                 \?)
                     DEPTYPE="optional"
@@ -1575,10 +1762,9 @@ diff_package() {
             <(pkgitems -g $PKGSRVR $fmri) \
             >> $of; then
                     logmsg -e "----- $fmri has changed"
-                    mv $of $TMPDIR/pkg.diff
-        else
-            rm -f $of
+                    cat $of >> $TMPDIR/pkg.diff
         fi
+        rm -f $of
     else
         logmsg "--- Comparing old package with new"
         if ! gdiff -U0 --color=always --minimal \
@@ -1665,6 +1851,14 @@ EOM
 #############################################################################
 
 install_smf() {
+    typeset methodpath=lib/svc/method
+    while [[ "$1" = -* ]]; do
+        case "$1" in
+            -oocemethod) methodpath+="/ooce" ;;
+        esac
+        shift
+    done
+
     mtype="${1:?type}"
     manifest="${2:?manifest}"
     method="$3"
@@ -1693,12 +1887,34 @@ install_smf() {
 
     # Method
     if [ -n "$method" ]; then
-        logcmd mkdir -p lib/svc/method \
-            || logerr "mkdir of $DESTDIR/lib/svc/method failed"
-        logcmd cp $methodf lib/svc/method/ \
+        logcmd mkdir -p $methodpath \
+            || logerr "mkdir of $DESTDIR/$methodpath failed"
+        logcmd cp $methodf $methodpath/ \
             || logerr "Cannot install SMF method"
-        logcmd chmod 0555 lib/svc/method/$method
+        logcmd chmod 0555 $methodpath/$method
     fi
+
+    popd > /dev/null
+}
+
+#############################################################################
+# Install an /etc/inet/services fragment
+#############################################################################
+
+install_inetservices() {
+    typeset frag="${1:-services}"
+
+    [ $RELVER -ge 151035 ] || return
+
+    pushd $DESTDIR > /dev/null
+    logmsg "-- Installing /etc/inet/services fragment - $frag"
+
+    [ -f "$SRCDIR/files/$frag" ] || logerr "files/$frag not found"
+
+    logcmd mkdir -p etc/inet/services.d || logerr "mkdir failed"
+
+    logcmd cp $SRCDIR/files/$frag etc/inet/services.d/${PKG//\//:} \
+        || logerr "copy failed"
 
     popd > /dev/null
 }
@@ -1720,6 +1936,29 @@ install_go() {
 }
 
 #############################################################################
+# Install a rust binary
+#############################################################################
+
+install_rust() {
+    logmsg "Installing $PROG"
+
+    logcmd mkdir -p "$DESTDIR/$PREFIX/bin" \
+        || logerr "Failed to create install dir"
+    logcmd cp $TMPDIR/$BUILDDIR/target/release/$PROG \
+        $DESTDIR/$PREFIX/bin/$PROG || logerr "Failed to install binary"
+
+    for f in `$FD "^$PROG\.1\$" $TMPDIR/$BUILDDIR`; do
+        logmsg "Found man page at $f"
+
+        logcmd mkdir -p "$DESTDIR/$PREFIX/share/man/man1" \
+            || logerr "Failed to create man install dir"
+        logcmd cp $f $DESTDIR/$PREFIX/share/man/man1/$PROG.1 \
+            || logerr "Failed to install man page"
+        break
+    done
+}
+
+#############################################################################
 # Make isaexec stub binaries
 #############################################################################
 
@@ -1732,15 +1971,18 @@ make_isa_stub() {
         if [ -d $DESTDIR$PREFIX/$DIR ]; then
             logmsg "--- $DIR"
             pushd $DESTDIR$PREFIX/$DIR > /dev/null
-            make_isaexec_stub_arch $ISAPART
-            make_isaexec_stub_arch $ISAPART64
+            make_isaexec_stub_arch $ISAPART $PREFIX/$DIR
+            make_isaexec_stub_arch $ISAPART64 $PREFIX/$DIR
             popd > /dev/null
         fi
     done
 }
 
 make_isaexec_stub_arch() {
-    for file in $1/*; do
+    typeset isa="$1"
+    typeset dir="$2"
+
+    for file in $isa/*; do
         [ -f "$file" ] || continue
         if [ -z "$STUBLINKS" -a -h "$file" ]; then
             # Symbolic link. If it's relative to within the same ARCH
@@ -1765,11 +2007,11 @@ make_isaexec_stub_arch() {
         fi
         # Skip if we already made a stub for this file
         [ -f "$file" ] && continue
-        logmsg "------ $file"
-        # Run the makeisa.sh script - build a 32-bit isa stub
-        CC=$CC CFLAGS="-m32 -O2" \
-            logcmd $MYDIR/makeisa.sh $PREFIX/$DIR $file \
-            || logerr "--- Failed to make isaexec stub for $DIR/$file"
+        logmsg "---- Creating ISA stub for $file"
+        logcmd $CC $CFLAGS $CFLAGS32 -o $file \
+            -DFALLBACK_PATH="$dir/$file" $MYDIR/isastub.c \
+            || logerr "--- Failed to make isaexec stub for $dir/$file"
+        logcmd strip -x $file
     done
 }
 
@@ -1803,9 +2045,16 @@ make_clean() {
     ) 2>&1 | sed 's/error: /errorclean: /' | pipelog >/dev/null
 }
 
+configure_autoreconf() {
+    [ -f configure -a -f configure.ac ] \
+        && [ ! configure.ac -nt configure ] && return
+    run_autoreconf -fi
+}
+
 configure32() {
     logmsg "--- configure (32-bit)"
     eval set -- $CONFIGURE_OPTS_WS_32 $CONFIGURE_OPTS_WS
+    [ -n "$RUN_AUTORECONF" ] && configure_autoreconf
     PCPATH=
     [ -n "$PKG_CONFIG_PATH" ] && addpath PCPATH "$PKG_CONFIG_PATH"
     [ -n "$PKG_CONFIG_PATH32" ] && addpath PCPATH "$PKG_CONFIG_PATH32"
@@ -1823,6 +2072,7 @@ configure32() {
 configure64() {
     logmsg "--- configure (64-bit)"
     eval set -- $CONFIGURE_OPTS_WS_64 $CONFIGURE_OPTS_WS
+    [ -n "$RUN_AUTORECONF" ] && configure_autoreconf
     PCPATH=
     [ -n "$PKG_CONFIG_PATH" ] && addpath PCPATH "$PKG_CONFIG_PATH"
     [ -n "$PKG_CONFIG_PATH64" ] && addpath PCPATH "$PKG_CONFIG_PATH64"
@@ -1841,7 +2091,7 @@ make_prog() {
     eval set -- $MAKE_ARGS_WS
     [ -n "$NO_PARALLEL_MAKE" ] && MAKE_JOBS=""
     if [ -n "$LIBTOOL_NOSTDLIB" ]; then
-        libtool_nostdlib $LIBTOOL_NOSTDLIB $LIBTOOL_NOSTDLIB_EXTRAS
+        libtool_nostdlib "$LIBTOOL_NOSTDLIB" "$LIBTOOL_NOSTDLIB_EXTRAS"
     fi
     logmsg "--- make"
     logcmd $MAKE $MAKE_JOBS $MAKE_ARGS "$@" $MAKE_TARGET \
@@ -1909,30 +2159,34 @@ make_install_in() {
 }
 
 build() {
+    local ctf=${CTF_DEFAULT:-0}
+
     while [[ "$1" = -* ]]; do
         case "$1" in
-            -ctf)
-                CFLAGS+=" -gdwarf-2"
-                ENABLE_CTF=1
-                ;;
-            -multi)
-                MULTI_BUILD=1
-                ;;
+            -ctf)   ctf=1 ;;
+            -noctf) ctf=0 ;;
+            -multi) MULTI_BUILD=1 ;;
         esac
         shift
     done
+
+    [ $ctf -eq 1 ] && CFLAGS+=" $CTF_CFLAGS"
+
     [ -n "$MULTI_BUILD" ] && logmsg "--- Using multiple build directories"
     typeset _BUILDDIR=$BUILDDIR
     for b in $BUILDORDER; do
-        if [ -n "$MULTI_BUILD" ]; then
-            BUILDDIR+="/build.$b"
-            mkdir -p $TMPDIR/$BUILDDIR
+        if [[ $BUILDARCH =~ ^($b|both)$ ]]; then
+            if [ -n "$MULTI_BUILD" ]; then
+                BUILDDIR+="/build.$b"
+                mkdir -p $TMPDIR/$BUILDDIR
+                MULTI_BUILD_LAST=$BUILDDIR
+            fi
+            build$b
+            BUILDDIR=$_BUILDDIR
         fi
-        [[ $BUILDARCH =~ ^($b|both)$ ]] && build$b
-        BUILDDIR=$_BUILDDIR
     done
 
-    [ -n "$ENABLE_CTF" ] && convert_ctf
+    [ $ctf -eq 1 ] && convert_ctf
 }
 
 check_buildlog() {
@@ -1977,7 +2231,11 @@ run_testsuite() {
     local dir="$2"
     local output="${3:-testsuite.log}"
     if [ -z "$SKIP_TESTSUITE" ] && ( [ -n "$BATCH" ] || ask_to_testsuite ); then
-        pushd $TMPDIR/$BUILDDIR/$dir > /dev/null
+        if [ -z "$MULTI_BUILD" ]; then
+            pushd $TMPDIR/$BUILDDIR/$dir > /dev/null
+        else
+            pushd $TMPDIR/$MULTI_BUILD_LAST/$dir > /dev/null
+        fi
         logmsg "Running testsuite"
         op=`mktemp`
         eval set -- $MAKE_TESTSUITE_ARGS_WS
@@ -2000,9 +2258,15 @@ run_testsuite() {
 
 build_dependency() {
     typeset merge=0
-    case $1 in
-        -merge)     merge=1; shift ;;
-    esac
+    typeset buildargs=
+    while [[ "$1" = -* ]]; do
+        case $1 in
+            -merge)     merge=1 ;;
+            -ctf)       buildargs+=" -ctf" ;;
+            -noctf)     buildargs+=" -noctf" ;;
+        esac
+        shift
+    done
     typeset dep="$1"
     typeset dir="$2"
     typeset dldir="$3"
@@ -2017,6 +2281,7 @@ build_dependency() {
     # Adjust variables so that download, patch and build work correctly
     BUILDDIR="$dir"
     PATCHDIR="patches-$dep"
+    [ ! -d "$PATCHDIR" -a -d "patches-$ver" ] && PATCHDIR="patches-$ver"
     if [ $merge -eq 0 ]; then
         DEPROOT=$TMPDIR/_deproot
         DESTDIR=$DEPROOT
@@ -2025,10 +2290,10 @@ build_dependency() {
         DEPROOT=$DESTDIR
     fi
 
+    note -n "-- Building dependency $dep"
     download_source "$dldir" "$prog" "$ver" "$TMPDIR"
     patch_source
-    note -n "-- Building dependency $dep"
-    build
+    build $buildargs
 
     # Restore variables
     BUILDDIR=$_BUILDDIR
@@ -2062,7 +2327,7 @@ python_path_fixup() {
     pushd $DESTDIR/$PREFIX/bin >/dev/null || return
     for f in *; do
         [ -f "$f" ] || continue
-        file "$f" | egrep -s 'executable.*python.*script' || continue
+        file "$f" | $EGREP -s 'executable.*python.*script' || continue
         logmsg "Fixing python library path in $f"
         sed -i "1a\\
 import sys; sys.path.insert(1, '$PREFIX/lib/python$PYTHONVER/vendor-packages')
@@ -2145,6 +2410,20 @@ python_build() {
 }
 
 #############################################################################
+# Build function for rust utils
+#############################################################################
+
+build_rust() {
+    logmsg "Building 64-bit"
+
+    pushd $TMPDIR/$BUILDDIR >/dev/null
+
+    logcmd $CARGO build --release $@ || logerr "build failed"
+
+    popd >/dev/null
+}
+
+#############################################################################
 # Build/test function for perl modules
 #############################################################################
 # Detects whether to use Build.PL or Makefile.PL
@@ -2223,7 +2502,7 @@ build_install() {
 test_if_core() {
     logmsg "Testing whether $MODNAME is in core"
     logmsg "--- Ensuring ${PKG} is not installed"
-    if logcmd pkg info ${PKG}; then
+    if logcmd pkg info -q ${PKG}; then
         logerr "------ Package ${PKG} appears to be installed.  Please uninstall it."
     else
         logmsg "------ Not installed, good."
@@ -2235,40 +2514,6 @@ test_if_core() {
     else
         logmsg "--- Module is not in core for Perl $DEPVER.  Continuing with build."
     fi
-}
-
-#############################################################################
-# Scan the destination install and strip the non-stipped ELF objects
-#############################################################################
-
-strip_install() {
-    logmsg "Stripping installation"
-    pushd $DESTDIR > /dev/null || logerr "Cannot change to $DESTDIR"
-    while read file; do
-        # This will catch not-stripped as well.. just want to check it's a
-        # strippable file.
-        file $file | $EGREP -s 'ELF.*stripped' || continue
-        logmsg "------ stripping $file"
-        MODE=$(stat -c %a "$file")
-        logcmd chmod u+w "$file" || logerr -b "chmod failed: $file"
-        logcmd strip -x "$file" || logerr -b "strip failed: $file"
-        logcmd chmod $MODE "$file" || logerr -b "chmod failed: $file"
-    done < <(find . -depth -type f -perm -0100)
-    popd > /dev/null
-}
-
-convert_ctf() {
-    pushd $DESTDIR >/dev/null
-    while read file; do
-        file $file | $EGREP -s 'ELF.*not stripped' || continue
-        logmsg "------ Converting CTF data for $file"
-        MODE=$(stat -c %a "$file")
-        logcmd chmod u+w "$file" || logerr -b "chmod failed: $file"
-        logcmd $CTFCONVERT $CTFCONVERTFLAGS "$PROG-$VER" -o $file $file
-        logcmd strip -x "$file" || logerr -b "strip failed: $file"
-        logcmd chmod $MODE "$file" || logerr -b "chmod failed: $file"
-    done < <(find . -depth -type f -perm -0100)
-    popd >/dev/null
 }
 
 #############################################################################
@@ -2368,13 +2613,15 @@ extract_libabis() {
 }
 
 check_libabi() {
-    local destdir="$1"
-    local pkg="$2"
+    local pkg="$1"
+    local mf="$2"
 
     logmsg "-- Checking for library ABI changes"
 
     # Build list of libraries and ABIs from this package on disk
-    logcmd -p find "$destdir" -type f -name lib\*.so.\* > $TMPDIR/libs.$$
+    nawk '
+        $1 == "file" && $2 ~ /\.so\.[0-9]/ { print $2 }
+    ' < $mf > $TMPDIR/libs.$$
     extract_libabis cla__new $TMPDIR/libs.$$
     logcmd rm -f $TMPDIR/libs.$$
 
@@ -2396,11 +2643,12 @@ check_libabi() {
     rm -f $TMPDIR/libs.$$
 
     # Compare
+    typeset change=0
     for k in "${!cla__new[@]}"; do
         [ "${cla__new[$k]}" = "${cla__prev[$k]}" ] && continue
         # The list of ABIs has changed. Make sure that all of the old versions
         # are present in the new.
-        logmsg -n "--- $lib ABI change, ${cla__prev[$k]} -> ${cla__new[$k]}"
+        logmsg -n "--- $k ABI change, ${cla__prev[$k]} -> ${cla__new[$k]}"
         local prev new flag
         for prev in ${cla__prev[$k]}; do
             flag=0
@@ -2408,33 +2656,136 @@ check_libabi() {
                 [ "$prev" = "$new" ] && flag=1
             done
             [ "$flag" -eq 1 ] && continue
-            logerr "--- $lib.so.$prev missing from new package"
+            change=1
+            logmsg -e "--- $k.so.$prev missing from new package"
         done
     done
+    [ $change -eq 1 ] && logerr "--- old ABI libraries missing"
 }
 
 #############################################################################
-# ELF checks
+# ELF operations
 #############################################################################
 
-check_rtime() {
-    local destdir="$1"
+rtime_files() {
+    # `find_elf` invokes `elfedit` and expects it to be the illumos one.
+    PATH=$USRBIN logcmd -p $FIND_ELF -fr $DESTDIR/ > $TMPDIR/rtime.files
+}
 
+rtime_objects() {
+    rtime_files
+    nawk '/^OBJECT/ { print $NF }' $TMPDIR/rtime.files
+}
+
+strip_install() {
+    logmsg "Stripping installation"
+
+    pushd $DESTDIR > /dev/null || logerr "Cannot change to $DESTDIR"
+    while read file; do
+        logmsg "------ stripping $file"
+        MODE=$(stat -c %a "$file")
+        logcmd chmod u+w "$file" || logerr -b "chmod failed: $file"
+        logcmd strip -x "$file" || logerr -b "strip failed: $file"
+        logcmd chmod $MODE "$file" || logerr -b "chmod failed: $file"
+    done < <(rtime_objects)
+    popd > /dev/null
+}
+
+convert_ctf() {
+    logmsg "Converting DWARF to CTF"
+
+    pushd $DESTDIR > /dev/null || logerr "Cannot change to $DESTDIR"
+
+    local ctftag='---- CTF:'
+
+    while read file; do
+        if [ -f $SRCDIR/files/ctf.skip ] \
+          && echo $file | $EGREP -qf $SRCDIR/files/ctf.skip; then
+            logmsg "$ctftag skipped $file"
+            logcmd strip -x "$file"
+            continue
+        fi
+
+        if $CTFDUMP -h "$file" 1>/dev/null 2>&1; then
+            continue
+        fi
+
+        typeset mode=`stat -c %a "$file"`
+        logcmd chmod u+w "$file" || logerr -b "chmod u+w failed: $file"
+        typeset tf="$file.$$"
+
+        typeset flags="$CTF_FLAGS"
+        if [ -f $SRCDIR/files/ctf.ignore ]; then
+            [ $RELVER -ge 151037 ] && flags+=" -M$SRCDIR/files/ctf.ignore" \
+                || flags+=" -m"
+        fi
+        if logcmd $CTFCONVERT $flags -l "$PROG-$VER" -o "$tf" "$file"; then
+            if [ -s "$tf" ]; then
+                logcmd cp "$tf" "$file"
+                if [ -z "$BATCH" -o -n "$CTF_AUDIT" ]; then
+                    logmsg -n "$ctftag $file" \
+                        "`$CTFDUMP -S $file | \
+                        nawk '/number of functions/{print $6}'` function(s)"
+                else
+                    logmsg "$ctftag converted $file"
+                fi
+            else
+                logmsg "$ctftag no DWARF data $file"
+            fi
+        else
+            logmsg -e "$ctftag failed $file"
+            if [ -n "$CTF_AUDIT" ]; then
+                logcmd mkdir -p $BASE_TMPDIR/ctfobj
+                typeset f=${file:2}
+                logcmd cp $file $BASE_TMPDIR/ctfobj/${f//\//_}
+            fi
+        fi
+
+        logcmd rm -f "$tf"
+        logcmd strip -x "$file"
+        logcmd chmod $mode "$file" || logerr -b "chmod failed: $file"
+    done < <(rtime_objects)
+
+    popd >/dev/null
+}
+
+check_rtime() {
     logmsg "-- Checking ELF runtime attributes"
-    logcmd -p $FIND_ELF -fr $destdir/ > $TMPDIR/rtime.files
+    rtime_files
+
+    cp $ROOTDIR/doc/rtime $TMPDIR/rtime.cfg
+    [ -f $SRCDIR/rtime ] && cat $SRCDIR/rtime >> $TMPDIR/rtime.cfg
+
     logcmd $CHECK_RTIME \
-        -e $ROOTDIR/doc/rtime \
+        -e $TMPDIR/rtime.cfg \
         -E $TMPDIR/rtime.err \
         -f $TMPDIR/rtime.files
+
     if [ -s "$TMPDIR/rtime.err" ]; then
         cat $TMPDIR/rtime.err | tee -a $LOGFILE
         logerr "ELF runtime problems detected"
     fi
 }
 
-check_bmi() {
-    local destdir="$1"
+check_ssp() {
+    logmsg "-- Checking stack smashing protection"
 
+    : > $TMPDIR/rtime.ssp
+    while read obj; do
+        [ -f "$DESTDIR/$obj" ] || continue
+        nm $DESTDIR/$obj | $EGREP -s '__stack_chk_guard' \
+            || echo "$obj does not include stack smashing protection" \
+            >> $TMPDIR/rtime.ssp &
+        parallelise $LCPUS
+    done < <(rtime_objects)
+    wait
+    if [ -s "$TMPDIR/rtime.ssp" ]; then
+        cat $TMPDIR/rtime.ssp | tee -a $LOGFILE
+        logerr "Found object(s) without SSP"
+    fi
+}
+
+check_bmi() {
     [ -n "$BMI_EXPECTED" ] && return
 
     # In the past, some programs have ended up containing BMI instructions
@@ -2443,18 +2794,15 @@ check_bmi() {
 
     logmsg "-- Checking for BMI instructions"
 
-    [ -f "$TMPDIR/rtime.files" ] || \
-        logcmd -p $FIND_ELF -fr $destdir/ > $TMPDIR/rtime.files
-
     : > $TMPDIR/rtime.bmi
     while read obj; do
-        [ -f "$destdir/$obj" ] || continue
-        dis $destdir/$obj 2>/dev/null \
+        [ -f "$DESTDIR/$obj" ] || continue
+        dis $DESTDIR/$obj 2>/dev/null \
             | $RIPGREP -wq --no-messages 'mulx|lzcntq|shlx' \
             && echo "$obj has been built with BMI instructions" \
             >> $TMPDIR/rtime.bmi &
         parallelise $LCPUS
-    done < <(nawk '/^OBJECT/ { print $NF }' $TMPDIR/rtime.files)
+    done < <(rtime_objects)
     wait
     if [ -s "$TMPDIR/rtime.bmi" ]; then
         cat $TMPDIR/rtime.bmi | tee -a $LOGFILE
@@ -2546,7 +2894,7 @@ clean_up() {
         logcmd rm -rf $DESTDIR || \
             logerr "Failed to remove temporary install directory"
         logmsg "--- Cleaning up temporary manifest and transform files"
-        logcmd rm -f $P5M_INT $P5M_INT2 $P5M_INT3 $P5M_FINAL \
+        logcmd rm -f $P5M_INT $P5M_INT2 $P5M_INT3 $P5M_INT3.res \
             $MY_MOG_FILE $MANUAL_DEPS || \
             logerr "Failed to remove temporary manifest and transform files"
         logmsg "Done."
@@ -2555,14 +2903,59 @@ clean_up() {
 }
 
 #############################################################################
-# Helper function that will let you save a predefined function so you can
-# override it and call it later
+# Helper functions to save and restore variables and functions
 #############################################################################
 
 save_function() {
     local ORIG_FUNC=$(declare -f $1)
     local NEWNAME_FUNC="$2${ORIG_FUNC#$1}"
     eval "$NEWNAME_FUNC"
+}
+
+save_variable() {
+    local var=$1
+    declare -n _var=$var
+    declare -g __save__$var="$_var"
+}
+
+restore_variable() {
+    local var=$1
+    declare -n _var=__save__$var
+    declare -g $var="$_var"
+}
+
+save_buildenv() {
+    local opt
+    for opt in $BUILDENV_OPTS; do
+        save_variable $opt
+    done
+}
+
+restore_buildenv() {
+    local opt
+    for opt in $BUILDENV_OPTS; do
+        restore_variable $opt
+    done
+}
+
+pkg_ver() {
+    local src="$1"
+    local script="${2:-build.sh}"
+
+    src=$ROOTDIR/build/$src/$script
+    [ -f $src ] || logerr "pkg_ver: cannot locate source"
+    local ver=`sed -n '/^VER=/ {
+                s/.*=//
+                p
+                q
+        }' $src`
+    [ -n "$ver" ] || logerr "No version found."
+    echo $ver
+}
+
+inherit_ver() {
+    VER=`pkg_ver "$@"`
+    logmsg "-- inherited version '$VER'"
 }
 
 # Vim hints

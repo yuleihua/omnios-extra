@@ -12,7 +12,7 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
@@ -22,21 +22,42 @@ PKG=ooce/network/mosh
 SUMMARY="mosh - mobile shell"
 DESC="Remote terminal application that allows roaming"
 
-BUILD_DEPENDS_IPS="ooce/library/protobuf"
+# The protobuf ABI changes frequently. Link mosh statically
+# to the current version.
+PBUFVER=3.15.5
 
 set_arch 64
 
-CONFIGURE_OPTS="
-    --bindir=$PREFIX/bin
-"
-
-LDFLAGS64+=" -R$PREFIX/lib/$ISAPART64"
-
 init
+prep_build
+
+#####################################################################
+# Download and build a static version of protobuf
+
+save_buildenv
+
+# Without specifying the shell as bash here, configure is broken
+# on releases until 151037
+[ $RELVER -lt 151037 ] && CONFIGURE_CMD="$USRBIN/bash ./configure"
+
+CONFIGURE_OPTS=" --disable-shared --enable-static"
+
+build_dependency -noctf protobuf protobuf-$PBUFVER \
+    protobuf protobuf-cpp $PBUFVER
+
+restore_buildenv
+
+export protobuf_CFLAGS="-I$DEPROOT/opt/ooce/include"
+export protobuf_LIBS="-L$DEPROOT/opt/ooce/lib/$ISAPART64 -lprotobuf"
+
+# the mosh build requires the protoc protobuf compiler
+PATH+=":$DEPROOT$OOCEBIN"
+
+#####################################################################
+
 download_source $PROG $PROG $VER
 patch_source
-prep_build
-build
+build -noctf    # C++
 make_package
 clean_up
 

@@ -12,7 +12,7 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition.  All rights reserved.
+# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
@@ -30,6 +30,7 @@ XFORM_ARGS="
 CONFIGURE_OPTS+="
     --mandir=$PREFIX/share/man
 "
+[ $RELVER -ge 151037 ] && LDFLAGS32+=" -lssp_ns"
 
 init
 download_source $PROG $PROG $VER

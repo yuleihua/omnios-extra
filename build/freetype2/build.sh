@@ -18,7 +18,7 @@
 . ../../lib/functions.sh
 
 PROG=freetype
-VER=2.10.2
+VER=2.10.4
 PKG=ooce/library/freetype2
 SUMMARY="A Free, High-Quality, and Portable Font Engine"
 DESC="$SUMMARY"
@@ -36,7 +36,6 @@ CONFIGURE_OPTS="
     --includedir=$PREFIX/include
     --disable-static
 "
-
 CONFIGURE_OPTS_32="
     --bindir=$PREFIX/bin/$ISAPART
     --libdir=$PREFIX/lib
@@ -45,6 +44,7 @@ CONFIGURE_OPTS_64="
     --bindir=$PREFIX/bin
     --libdir=$PREFIX/lib/$ISAPART64
 "
+[ $RELVER -ge 151037 ] && LDFLAGS32+=" -lssp_ns"
 
 init
 download_source ${PROG}2 $PROG $VER

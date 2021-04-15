@@ -12,64 +12,81 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=ImageMagick
-VER=7.0.10-6
+VER=7.0.11-3
 PKG=ooce/application/imagemagick
 SUMMARY="$PROG - Convert, Edit, or Compose Bitmap Images"
 DESC="Use $PROG to create, edit, compose, or convert bitmap images. It can "
 DESC+="read and write images in a variety of formats (over 200) including "
 DESC+="PNG, JPEG, GIF, HEIC, TIFF, DPX, EXR, WebP, Postscript, PDF, and SVG."
 
+OPREFIX=$PREFIX
+PREFIX+=/$PROG
+
+reset_configure_opts
+
 SKIP_LICENCES=ImageMagick
+SKIP_RTIME_CHECK=1
 
 BUILD_DEPENDS_IPS="
     library/libxml2
     ooce/library/fontconfig
     ooce/library/freetype2
+    ooce/library/libheif
     ooce/library/libjpeg-turbo
     ooce/library/libpng
     ooce/library/pango
     ooce/library/tiff
+    ooce/library/libwebp
+    ooce/library/libzip
     ooce/application/graphviz
 "
-
-OPREFIX=$PREFIX
-PREFIX+=/$PROG
-
-set_arch 64
-
-TESTSUITE_FILTER='^[A-Z#][A-Z ]'
 
 XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
+    -DPKGROOT=$PROG
 "
+
+TESTSUITE_FILTER='^[A-Z#][A-Z ]'
 
 CONFIGURE_OPTS="
     --prefix=$PREFIX
     --sysconfdir=/etc$PREFIX
     --enable-hdri
     --with-modules
+    --with-heic
     --disable-static
 "
 
-CFLAGS+=" -I$OPREFIX/include"
+CONFIGURE_OPTS_64+=" --bindir=$PREFIX/bin"
+
+CPPFLAGS+=" -I$OPREFIX/libzip/include"
+LDFLAGS32+=" -L$OPREFIX/lib -R$OPREFIX/lib"
 LDFLAGS64+=" -L$OPREFIX/lib/$ISAPART64 -R$OPREFIX/lib/$ISAPART64"
 
+make_isa_stub() {
+    pushd $DESTDIR$PREFIX/bin >/dev/null
+    logcmd mkdir -p $ISAPART64
+    logcmd mv *-config $ISAPART64/ || logerr "mv -config"
+    make_isaexec_stub_arch $ISAPART64 $PREFIX/bin
+    popd >/dev/null
+}
+
 init
+prep_build
 download_source $PROG $PROG $VER
 patch_source
-prep_build
 build
 strip_install
 run_testsuite check
-VER=${VER//-/.}
-make_package
+make_isa_stub
+VER=${VER//-/.} make_package
 clean_up
 
 # Vim hints

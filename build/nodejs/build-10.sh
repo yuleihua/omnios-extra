@@ -12,18 +12,21 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=node
-VER=10.21.0
+VER=10.24.1
 PKG=ooce/runtime/node-10
 SUMMARY="Node.js is an evented I/O framework for the V8 JavaScript engine."
 DESC="Node.js is an evented I/O framework for the V8 JavaScript engine. "
 DESC+="It is intended for writing scalable network programs such as web servers."
 
 set_arch 64
+# This version of node always uses a local static brotli library so allow files
+# without debug data.
+CTF_FLAGS+=" -m"
 
 set_builddir $PROG-v$VER
 
@@ -45,19 +48,24 @@ XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
+    -DPKGROOT=$PROG-$MAJVER
+    -DMEDIATOR=$PROG -DMEDIATOR_VERSION=$MAJVER
     -DVERSION=$MAJVER
 "
-# node contains BMI instructions even when built on an older CPU
-BMI_EXPECTED=1
 
-CONFIGURE_OPTS_64=" \
-    --with-dtrace \
-    --dest-cpu=x64 \
-    --prefix=$PREFIX \
+CONFIGURE_OPTS_64=
+CONFIGURE_OPTS="
+    --prefix=$PREFIX
+    --with-dtrace
+    --dest-cpu=x64
+    --shared-nghttp2
+    --shared-openssl
+    --shared-zlib
 "
 
 init
 download_source $PROG $PROG v$VER
+patch_source
 prep_build
 build
 strip_install

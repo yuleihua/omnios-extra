@@ -1,0 +1,20 @@
+diff -wpruN '--exclude=*.orig' a~/CMakeLists.txt a/CMakeLists.txt
+--- a~/CMakeLists.txt	1970-01-01 00:00:00
++++ a/CMakeLists.txt	1970-01-01 00:00:00
+@@ -5,16 +5,6 @@ include(CheckIPOSupported)
+ 
+ project(ninja)
+ 
+-# --- optional link-time optimization
+-check_ipo_supported(RESULT lto_supported OUTPUT error)
+-
+-if(lto_supported)
+-	message(STATUS "IPO / LTO enabled")
+-	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+-else()
+-	message(STATUS "IPO / LTO not supported: <${error}>")
+-endif()
+-
+ # --- compiler flags
+ if(MSVC)
+ 	set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

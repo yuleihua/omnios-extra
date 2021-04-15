@@ -12,15 +12,17 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=lmdb
-VER=0.9.24
+VER=0.9.28
 PKG=ooce/database/lmdb
 SUMMARY="lmdb"
 DESC="Lightning Memory-Mapped Database"
+
+forgo_isaexec
 
 SKIP_LICENCES=OpenLDAP
 
@@ -34,7 +36,10 @@ XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
+    -DPKGROOT=$PROG
 "
+
+MAKE_ARGS+=" -e"
 
 MAKE_INSTALL_ARGS="
     prefix=$PREFIX
@@ -42,25 +47,23 @@ MAKE_INSTALL_ARGS="
 "
 
 MAKE_INSTALL_ARGS_32="
-    bindir=$PREFIX/bin/$ISAPART
-    sbindir=$PREFIX/sbin/$ISAPART
     libdir=$OPREFIX/lib
 "
 
 MAKE_INSTALL_ARGS_64="
-    bindir=$PREFIX/bin
-    sbindir=$PREFIX/sbin
     libdir=$OPREFIX/lib/$ISAPART64
 "
 
 configure32() {
     export XCFLAGS="$CFLAGS $CFLAGS32"
     export LDFLAGS="$LDFLAGS $LDFLAGS32"
+    [ $RELVER -ge 151037 ] && export SOLIBS="-lssp_ns"
 }
 
 configure64() { 
     export XCFLAGS="$CFLAGS $CFLAGS64"
     export LDFLAGS="$LDFLAGS $LDFLAGS64"
+    export SOLIBS=
 }
 
 init

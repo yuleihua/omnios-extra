@@ -12,19 +12,19 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition.  All rights reserved.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=minio
 PKG=ooce/storage/minio
-VER=2020-06-03T22-13-49Z
+VER=2021-03-17T02-33-02Z
 SUMMARY="MinIO server"
 DESC="A high Performance Object Storage released under Apache License v2.0. "
 DESC+="It is API compatible with Amazon S3 cloud storage service."
 
 set_arch 64
-set_gover 1.13
+set_gover 1.16
 
 OPREFIX=$PREFIX
 PREFIX+="/$PROG"

@@ -12,7 +12,7 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2019 OmniOS Community Edition.  All rights reserved.
+# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
@@ -57,6 +57,7 @@ CONFIGURE_OPTS_64="
 "
 
 CFLAGS+=" -I$OPREFIX/include"
+LDFLAGS+=" $SSPFLAGS"
 LDFLAGS32+=" -L$OPREFIX/lib -R$OPREFIX/lib"
 LDFLAGS64+=" -L$OPREFIX/lib/$ISAPART64 -R$OPREFIX/lib/$ISAPART64"
 

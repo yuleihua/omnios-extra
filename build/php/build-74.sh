@@ -12,13 +12,13 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=php
 PKG=ooce/application/php-74
-VER=7.4.7
+VER=7.4.16
 SUMMARY="PHP 7.4"
 DESC="A popular general-purpose scripting language"
 
@@ -37,9 +37,8 @@ PATCHDIR=patches-$sMAJVER
 OPREFIX=$PREFIX
 PREFIX+=/$PROG-$MAJVER
 CONFPATH=/etc$PREFIX
-LOGPATH=/var/log$OPREFIX/$PROG
-VARPATH=/var$OPREFIX/$PROG
-RUNPATH=$VARPATH/run
+VARPATH=/var$PREFIX
+RUNPATH=/var$OPREFIX/$PROG/run
 
 BUILD_DEPENDS_IPS="
     ooce/database/bdb
@@ -47,6 +46,7 @@ BUILD_DEPENDS_IPS="
     ooce/library/freetype2
     ooce/library/libjpeg-turbo
     ooce/library/libpng
+    ooce/library/libzip
     ooce/library/onig
 "
 RUN_DEPENDS_IPS="ooce/application/php-common"
@@ -55,15 +55,48 @@ XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
+    -DPKGROOT=$PROG-$MAJVER
+    -DMEDIATOR=$PROG -DMEDIATOR_VERSION=$MAJVER
     -DVERSION=$MAJVER
     -DsVERSION=$sMAJVER
 "
+
+init
+prep_build
+
+######################################################################
+# Build dependencies
+
+save_buildenv
+save_function make_install _make_install
+
+make_install() {
+    logcmd mkdir -p $DESTDIR/lib $DESTDIR/include
+    logcmd cp c-client/c-client.a $DESTDIR/lib/libc-client.a \
+        || logerr "Installation of libc-client.a failed"
+    logcmd cp c-client/*.h $DESTDIR/include/ \
+        || logerr "Installation of c-client headers failed"
+}
+
+CONFIGURE_CMD=/bin/true \
+    NO_PARALLEL_MAKE=1 \
+    MAKE_TARGET=gso \
+    MAKE_ARGS="SSLLIB=/usr/lib/64 SSLTYPE=unix" \
+    MAKE_ARGS_WS="EXTRACFLAGS=\"$CFLAGS $CFLAGS64 -I/usr/include/openssl\"" \
+    build_dependency uw-imap panda-imap-master uw-imap panda-imap master
+
+save_function _make_install make_install
+restore_buildenv
+
+note -n "Building $PROG $VER"
+
+######################################################################
 
 CONFIGURE_OPTS_64="
     --prefix=$PREFIX
     --sysconfdir=$CONFPATH
     --localstatedir=$VARPATH
-    --with-config-file-path=$CONFPATH/php.ini
+    --with-config-file-path=$CONFPATH
 
     --disable-libgcc
     --with-iconv
@@ -78,19 +111,30 @@ CONFIGURE_OPTS_64="
     --enable-pcntl
     --with-openssl
     --with-gmp
+    --with-mysql=mysqlnd
     --with-mysqli=mysqlnd
     --with-pdo-mysql=mysqlnd
     --with-zlib=/usr
     --with-zlib-dir=/usr
     --with-bz2=/usr
+    --with-readline=/usr
     --with-curl
     --enable-gd
+    --enable-sockets
+    --enable-bcmath
+    --enable-exif
+    --with-zip
+    --with-imap=$DEPROOT
+    --with-imap-ssl=/usr
 
     --with-db4=$OPREFIX
     --with-lmdb=$OPREFIX
+    --with-ldap=$OPREFIX
     --with-jpeg
     --with-png
     --with-freetype
+    --with-pgsql=$OPREFIX/pgsql-$PGSQLVER
+    --with-pdo-pgsql=$OPREFIX/pgsql-$PGSQLVER
 
     --enable-fpm
     --with-fpm-user=php
@@ -98,6 +142,7 @@ CONFIGURE_OPTS_64="
 "
 
 CPPFLAGS+=" -I/usr/include/gmp"
+CPPFLAGS+=" -I$OPREFIX/libzip/include"
 LDFLAGS+=" -static-libgcc -L$OPREFIX/lib/$ISAPART64 -R$OPREFIX/lib/$ISAPART64"
 
 save_function configure64 _configure64
@@ -151,10 +196,8 @@ upload_tmp_dir = /tmp
     popd >/dev/null
 }
 
-init
 download_source $PROG $PROG $VER
 patch_source
-prep_build
 build
 strip_install
 xform files/php-template.xml > $TMPDIR/$PROG-$sMAJVER.xml

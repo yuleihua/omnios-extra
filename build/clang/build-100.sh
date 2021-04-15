@@ -18,7 +18,7 @@
 
 PROG=clang
 PKG=ooce/developer/clang-100
-VER=10.0.0
+VER=10.0.1
 SUMMARY="C language family frontend for LLVM"
 DESC="The Clang project provides a language front-end and tooling "
 DESC+="infrastructure for languages in the C language family (C, C++, "
@@ -26,6 +26,8 @@ DESC+="Objective C/C++, OpenCL, CUDA, and RenderScript) for the LLVM project"
 
 set_arch 64
 set_builddir $PROG-$VER.src
+
+SKIP_RTIME_CHECK=1
 
 MAJVER=${VER%.*}
 PATCHDIR=patches-${MAJVER//./}
@@ -45,8 +47,9 @@ XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
+    -DPKGROOT=$PROG-$MAJVER
+    -DMEDIATOR=$PROG -DMEDIATOR_VERSION=$MAJVER
     -DVERSION=$MAJVER
-    -DLICENCE=Apache2
 "
 
 CMAKE="cmake -G Ninja"
@@ -71,7 +74,8 @@ init
 download_source $PROG $PROG $VER.src
 patch_source
 prep_build cmake
-build
+build -noctf    # C++
+strip_install
 make_package
 clean_up
 

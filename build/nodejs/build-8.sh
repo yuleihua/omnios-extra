@@ -12,8 +12,7 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
-# Use is subject to license terms.
+# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
 #
 . ../../lib/functions.sh
 
@@ -46,19 +45,24 @@ XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
+    -DPKGROOT=$PROG-$MAJVER
+    -DMEDIATOR=$PROG -DMEDIATOR_VERSION=$MAJVER
     -DVERSION=$MAJVER
 "
-# node contains BMI instructions even when built on an older CPU
-BMI_EXPECTED=1
 
-CONFIGURE_OPTS_64=" \
-    --with-dtrace \
-    --dest-cpu=x64 \
-    --prefix=$PREFIX \
+CONFIGURE_OPTS_64=
+CONFIGURE_OPTS="
+    --prefix=$PREFIX
+    --with-dtrace
+    --dest-cpu=x64
+    --shared-nghttp2
+    --shared-openssl
+    --shared-zlib
 "
 
 init
 download_source $PROG $PROG v$VER
+patch_source
 prep_build
 build
 strip_install

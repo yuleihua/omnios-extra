@@ -12,12 +12,12 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=cups
-VER=2.3.3
+VER=2.3.3op2
 PKG=ooce/print/cups
 SUMMARY="Common UNIX Printing System"
 DESC="Standards-based, open source printing system for UNIX operating systems"
@@ -30,6 +30,7 @@ XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
+    -DPKGROOT=$PROG
 "
 
 CONFIGURE_OPTS="
@@ -42,6 +43,7 @@ CONFIGURE_OPTS="
     --with-smfmanifestdir=/lib/svc/manifest/application
     --with-cups-user=lp
     --with-cups-group=lp
+    --enable-debug
     --disable-static
     --disable-gnutls
     --without-bundledir
@@ -84,7 +86,7 @@ prep_build
 run_autoconf -f
 build
 strip_install
-make_package
+VER=${VER//op/.} make_package
 clean_up
 
 # Vim hints

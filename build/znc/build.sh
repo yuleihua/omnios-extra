@@ -17,7 +17,7 @@
 . ../../lib/functions.sh
 
 PROG=znc
-VER=1.8.1
+VER=1.8.2
 VERHUMAN=$VER
 PKG=ooce/network/znc
 SUMMARY="$PROG - an advanced IRC bouncer"
@@ -26,6 +26,7 @@ DESC+="can disconnect/reconnect without losing the chat session"
 
 OPREFIX=$PREFIX
 PREFIX+="/$PROG"
+
 XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
@@ -42,12 +43,16 @@ install_modules() {
     done
 }
 
+CONFIGURE_OPTS_64+="
+    --libdir=$PREFIX/lib
+"
+
 init
 download_source $PROG $PROG $VER
 patch_source
 install_modules
 prep_build
-build
+build -noctf    # C++
 strip_install
 install_smf network znc.xml
 make_package

@@ -12,19 +12,19 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=pango
-VER=1.45.3
+VER=1.48.4
 PKG=ooce/library/pango
 SUMMARY="pango"
 DESC="Pango is a library for laying out and rendering of text"
 
 # Dependencies
-HARFBUZZVER=2.6.8
-FRIBIDIVER=1.0.9
+HARFBUZZVER=2.7.2
+FRIBIDIVER=1.0.10
 
 BUILD_DEPENDS_IPS="
     ooce/library/fontconfig
@@ -40,6 +40,7 @@ XFORM_ARGS="
 "
 
 LDFLAGS32+=" -L$PREFIX/lib -R$PREFIX/lib"
+[ $RELVER -ge 151037 ] && LDFLAGS32+=" -lssp_ns"
 LDFLAGS64+=" -L$PREFIX/lib/$ISAPART64 -R$PREFIX/lib/$ISAPART64"
 
 export MAKE
@@ -68,7 +69,7 @@ prep_build
 ######################################################################
 
 EXPECTED_OPTIONS="CAIRO CAIRO_FT FONTCONFIG FREETYPE GLIB"
-build_dependency -merge harfbuzz harfbuzz-$HARFBUZZVER \
+build_dependency -merge -noctf harfbuzz harfbuzz-$HARFBUZZVER \
     harfbuzz harfbuzz $HARFBUZZVER
 
 export CPPFLAGS+=" -I$DEPROOT/$PREFIX/include/harfbuzz"
@@ -76,7 +77,7 @@ export CPPFLAGS+=" -I$DEPROOT/$PREFIX/include/harfbuzz"
 ######################################################################
 
 EXPECTED_OPTIONS=""
-build_dependency -merge fribidi fribidi-$FRIBIDIVER \
+build_dependency -merge -noctf fribidi fribidi-$FRIBIDIVER \
     fribidi fribidi $FRIBIDIVER
 export CPPFLAGS+=" -I$DEPROOT/$PREFIX/include/fribidi"
 
@@ -97,7 +98,7 @@ CONFIGURE_OPTS="
     -Db_asneeded=false
     -Dgtk_doc=false
     -Dinstall-tests=false
-    -Dintrospection=false
+    -Dintrospection=disabled
 "
 CONFIGURE_OPTS_32="
     --libdir=$PREFIX/lib
@@ -107,15 +108,6 @@ CONFIGURE_OPTS_64="
 "
 
 EXPECTED_OPTIONS="CAIRO CAIRO_FREETYPE CAIRO_PDF CAIRO_PS CAIRO_PNG FREETYPE"
-
-# meson will not re-configure without --wipe and will not --wipe unless it
-# has already been configured. Until the framework is updated to automatically
-# use separate directories for each arch, wipe the build directory between
-# builds.
-make_clean() {
-    logmsg "--- make (dist)clean"
-    [ -d $TMPDIR/$BUILDDIR ] && logcmd rm -rf $TMPDIR/$BUILDDIR
-}
 
 fixup() {
     # Meson strips runpaths when it installs objects, something which a lot
@@ -134,16 +126,16 @@ fixup() {
     rpath64="/usr/gcc/$GCCVER/lib/$ISAPART64:$PREFIX/lib/$ISAPART64"
     for obj in $P/bin/* $P/lib/*.so* $P/lib/$ISAPART64/*.so*; do
         [ -f "$obj" ] || continue
-        if ! elfdump -d $obj | egrep -s RPATH; then
-            logmsg "--- fixing runpath for $obj"
-            if file $obj | egrep -s 'ELF 64-bit'; then
-                logcmd elfedit -e "dyn:value -s RUNPATH $rpath64" $obj
-            elif file $obj | egrep -s 'ELF 32-bit'; then
-                logcmd elfedit -e "dyn:value -s RUNPATH $rpath32" $obj
-            else
-                file $obj
-                logerr "BAD"
-            fi
+        logmsg "--- fixing runpath for $obj"
+        if file $obj | egrep -s 'ELF 64-bit'; then
+            logcmd elfedit -e "dyn:value -s RPATH $rpath64" $obj
+            logcmd elfedit -e "dyn:value -s RUNPATH $rpath64" $obj
+        elif file $obj | egrep -s 'ELF 32-bit'; then
+            logcmd elfedit -e "dyn:value -s RPATH $rpath32" $obj
+            logcmd elfedit -e "dyn:value -s RUNPATH $rpath32" $obj
+        else
+            file $obj
+            logerr "BAD"
         fi
     done
     popd >/dev/null

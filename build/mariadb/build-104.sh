@@ -12,12 +12,12 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=mariadb
-VER=10.4.13
+VER=10.4.18
 PKG=ooce/database/mariadb-104
 SUMMARY="MariaDB"
 DESC="A community-developed, commercially supported fork of the "
@@ -34,9 +34,11 @@ LOGPATH=/var/log$PREFIX
 VARPATH=/var$PREFIX
 RUNPATH=$VARPATH/run
 
+SKIP_RTIME_CHECK=1
+
 BUILD_DEPENDS_IPS="
     ooce/developer/cmake
-    ooce/compress/lz4
+    compress/lz4
 "
 
 XFORM_ARGS="
@@ -45,6 +47,7 @@ XFORM_ARGS="
     -DPROG=$PROG
     -DVERSION=$MAJVER
     -DsVERSION=$sMAJVER
+    -DUSER=mysql -DGROUP=mysql
 "
 
 CFLAGS+=" -O3 -I$OPREFIX/include -I/usr/include/gssapi"
@@ -52,9 +55,6 @@ CXXFLAGS32="$CFLAGS $CFLAGS32 -R$OPREFIX/lib"
 CXXFLAGS64="$CFLAGS $CFLAGS64 -R$OPREFIX/lib/$ISAPART64"
 LDFLAGS32+=" -L$OPREFIX/lib -R$OPREFIX/lib"
 LDFLAGS64+=" -L$OPREFIX/lib/$ISAPART64 -R$OPREFIX/lib/$ISAPART64"
-# Prevents "Text relocation remains referenced against symbol offset
-# in file ../../sql/mysqld_dtrace_all.o" error
-LDFLAGS+=" -Bsymbolic -mimpure-text -lrt"
 
 CONFIGURE_OPTS=
 CONFIGURE_OPTS_32=
@@ -66,9 +66,9 @@ CONFIGURE_OPTS_WS_32="
     -DCMAKE_EXE_LINKER_FLAGS_RELEASE=\"$LDFLAGS32\"
     -DCMAKE_MODULE_LINKER_FLAGS_RELEASE=\"$LDFLAGS32\"
     -DCMAKE_SHARED_LINKER_FLAGS_RELEASE=\"$LDFLAGS32\"
-    -DINSTALL_BINDIR=$PREFIX/bin/$ISAPART
-    -DINSTALL_SBINDIR=$PREFIX/bin/$ISAPART
-    -DINSTALL_SCRIPTDIR=$PREFIX/bin/$ISAPART
+    -DINSTALL_BINDIR=bin/$ISAPART
+    -DINSTALL_SBINDIR=bin/$ISAPART
+    -DINSTALL_SCRIPTDIR=bin/$ISAPART
     -DINSTALL_LIBDIR=lib
     -DWITH_MARIABACKUP=OFF
     -DWITH_UNIT_TESTS=OFF
@@ -80,9 +80,9 @@ CONFIGURE_OPTS_WS_64="
     -DCMAKE_EXE_LINKER_FLAGS_RELEASE=\"$LDFLAGS64\"
     -DCMAKE_MODULE_LINKER_FLAGS_RELEASE=\"$LDFLAGS64\"
     -DCMAKE_SHARED_LINKER_FLAGS_RELEASE=\"$LDFLAGS64\"
-    -DINSTALL_BINDIR=$PREFIX/bin
-    -DINSTALL_SBINDIR=$PREFIX/bin
-    -DINSTALL_SCRIPTDIR=$PREFIX/bin
+    -DINSTALL_BINDIR=bin
+    -DINSTALL_SBINDIR=bin
+    -DINSTALL_SCRIPTDIR=bin
     -DINSTALL_LIBDIR=lib/$ISAPART64
 "
 CONFIGURE_OPTS_WS="
@@ -108,7 +108,7 @@ CONFIGURE_OPTS_WS="
     -DWITH_DEBUG=OFF
     -DENABLE_DEBUG_SYNC=OFF
 
-    -DENABLE_DTRACE=ON
+    -DENABLE_DTRACE=OFF
     -DWITH_READLINE=ON
     -DWITH_EMBEDDED_SERVER=OFF
     -DWITHOUT_MROONGA_STORAGE_ENGINE=ON
@@ -124,14 +124,25 @@ CONFIGURE_OPTS_WS="
     -DWITH_PIC=1
 "
 
-save_function make_install _make_install
-make_install() {
-    _make_install
-    logcmd mkdir -p $DESTDIR/$CONFPATH
-    sed < $SRCDIR/files/my.cnf > $DESTDIR/$CONFPATH/my.cnf "
-        s/%MAJVER%/$MAJVER/g
-        s/%sMAJVER%/$sMAJVER/g
-    "
+# Make ISA binaries for mysql_config, to allow software to find the
+# right settings for 32/64-bit when pkg-config is not used.
+make_isa_stub() {
+    pushd $DESTDIR$PREFIX/bin >/dev/null
+    logcmd mkdir -p $ISAPART64
+    logcmd mv *_config $ISAPART64/ || logerr "mv mysql_config"
+    make_isaexec_stub_arch $ISAPART64 $PREFIX/bin
+    popd >/dev/null
+}
+
+build_manifests() {
+    manifest_start $TMPDIR/manifest.client
+    manifest_add_dir $PREFIX/include mysql
+    manifest_add_dir $PREFIX/lib pkgconfig $ISAPART64 $ISAPART64/pkgconfig
+    manifest_add $PREFIX/bin '.*(mysql|mariadb)_config' mysql mariadb
+    manifest_add $PREFIX/man/man1 mariadb.1 mysql.1 mysql_config.1
+    manifest_finalise $OPREFIX
+
+    manifest_uniq $TMPDIR/manifest.{server,client}
 }
 
 init
@@ -140,9 +151,18 @@ patch_source
 prep_build cmake
 build
 strip_install
+make_isa_stub
 add_notes README.install
-install_smf application $PROG-$sMAJVER.xml $PROG-$sMAJVER
-make_package
+logcmd mkdir -p $DESTDIR/$CONFPATH
+xform files/my.cnf > $DESTDIR/$CONFPATH/my.cnf
+xform files/mariadb-template.xml > $TMPDIR/$PROG-$sMAJVER.xml
+xform files/mariadb-template > $TMPDIR/$PROG-$sMAJVER
+install_smf -oocemethod ooce $PROG-$sMAJVER.xml $PROG-$sMAJVER
+build_manifests
+PKG=${PKG/database/library} SUMMARY+=" client and libraries" \
+    make_package -seed $TMPDIR/manifest.client
+RUN_DEPENDS_IPS=${PKG/database/library} \
+    make_package -seed $TMPDIR/manifest.server server.mog
 clean_up
 
 # Vim hints

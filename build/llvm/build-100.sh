@@ -18,12 +18,14 @@
 
 PROG=llvm
 PKG=ooce/developer/llvm-100
-VER=10.0.0
+VER=10.0.1
 SUMMARY="Low Level Virtual Machine compiler infrastructure"
 DESC="A collection of modular and reusable compiler and toolchain technologies"
 
 set_arch 64
 set_builddir $PROG-$VER.src
+
+SKIP_RTIME_CHECK=1
 
 MAJVER=${VER%.*}
 PATCHDIR=patches-${MAJVER//./}
@@ -36,7 +38,6 @@ XFORM_ARGS="
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
     -DVERSION=$MAJVER
-    -DLICENCE=Apache2
 "
 
 CMAKE="cmake -G Ninja"
@@ -61,7 +62,7 @@ init
 download_source $PROG $PROG $VER.src
 patch_source
 prep_build cmake
-build
+build -noctf    # C++
 run_testsuite check-all
 make_package
 clean_up

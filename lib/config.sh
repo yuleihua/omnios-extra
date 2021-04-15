@@ -21,7 +21,7 @@
 #
 # Copyright (c) 2015 by Delphix. All rights reserved.
 # Copyright 2017 OmniTI Computer Consulting, Inc.  All rights reserved.
-# Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
 #
 #############################################################################
 # Configuration for the build system
@@ -93,13 +93,14 @@ PKGSRVR=file://$ROOTDIR/tmp.repo/
 export SHELL=/usr/bin/bash
 
 # The package publisher email address
-PUBLISHER_EMAIL=sa@omniosce.org
+PUBLISHER_EMAIL=sa@omnios.org
 
 # The github repository root from which some packages are pulled
 GITHUB=https://github.com
+GITHUBAPI=https://api.github.com
 OOCEGITHUB=$GITHUB/omniosorg
 # The main OOCE mirror
-SRCMIRROR=https://mirrors.omniosce.org
+SRCMIRROR=https://mirrors.omnios.org
 
 # The server or path from which to fetch source code and other files.
 # MIRROR may be overridden in lib/site.sh but defaults to the main OOCE mirror
@@ -109,11 +110,11 @@ MIRROR=$SRCMIRROR
 # The production IPS repository for this branch (may be overridden in site.sh)
 # Used for package contents diffing.
 if [ $((RELVER % 2)) == 0 ]; then
-    IPS_REPO=https://pkg.omniosce.org/r$RELVER/extra
-    OB_IPS_REPO=https://pkg.omniosce.org/r$RELVER/core
+    IPS_REPO=https://pkg.omnios.org/r$RELVER/extra
+    OB_IPS_REPO=https://pkg.omnios.org/r$RELVER/core
 else
-    IPS_REPO=https://pkg.omniosce.org/bloody/extra
-    OB_IPS_REPO=https://pkg.omniosce.org/bloody/core
+    IPS_REPO=https://pkg.omnios.org/bloody/extra
+    OB_IPS_REPO=https://pkg.omnios.org/bloody/core
 fi
 
 ARCHIVE_TYPES="tar.xz tar.bz2 tar.gz tgz tar zip"
@@ -151,7 +152,7 @@ TRIPLET64=x86_64-pc-solaris2.11
 #############################################################################
 
 # Perl versions we currently build against
-PERLVER="`perl -V:version | cut -d"'" -f2`"
+PERLVER=`perl -MConfig -e 'print $Config{version}'`
 SPERLVER=${PERLVER%.*}
 
 # Full paths to bins
@@ -174,35 +175,61 @@ PERL_MAKE_TEST=1
 #############################################################################
 # Paths to common tools
 #############################################################################
-WGET=wget
-PATCH=gpatch
-MAKE=gmake
-TESTSUITE_MAKE=gmake
-TAR="gtar --no-same-permissions --no-same-owner"
-GZIP=/opt/ooce/bin/pigz
-BUNZIP2=/opt/ooce/bin/pbunzip2
-ZSTD=/opt/ooce/bin/zstd
-XZCAT=xzcat
-UNZIP=unzip
-AWK=gawk
-GIT=git
-EGREP=/usr/bin/egrep
-RIPGREP=/opt/ooce/bin/rg
-CMAKE=/opt/ooce/bin/cmake
-MESON_MAKE=/opt/ooce/bin/ninja
-REALPATH=/usr/gnu/bin/realpath
-FIND_ELF=/opt/onbld/bin/find_elf
-CHECK_RTIME=/opt/onbld/bin/check_rtime
-# Command for privilege escalation. Can be overridden in site.sh
-PFEXEC=sudo
+USRBIN=/usr/bin
+OOCEBIN=/opt/ooce/bin
+SFWBIN=/usr/sfw/bin
+ONBLDBIN=/opt/onbld/bin
+GNUBIN=/usr/gnu/bin
 
-CTFCONVERT=/opt/onbld/bin/i386/ctfconvert
-CTFCONVERTFLAGS=-l
-PKGSEND=/usr/bin/pkgsend
-PKGLINT=/usr/bin/pkglint
-PKGMOGRIFY=/usr/bin/pkgmogrify
-PKGFMT=/usr/bin/pkgfmt
-PKGDEPEND=/usr/bin/pkgdepend
+AWK=$USRBIN/gawk
+CURL=$USRBIN/curl
+EGREP=$USRBIN/egrep
+GIT=$USRBIN/git
+MAKE=$USRBIN/gmake
+PATCH=$USRBIN/gpatch
+TAR="$USRBIN/gtar --no-same-permissions --no-same-owner"
+TESTSUITE_MAKE=$USRBIN/gmake
+UNZIP=$USRBIN/unzip
+WGET=$USRBIN/wget
+XZCAT=$USRBIN/xzcat
+[ $RELVER -ge 151035 ] && ZSTD=$USRBIN/zstd || ZSTD=$OOCEBIN/zstd
+
+ # Command for privilege escalation. Can be overridden in site.sh
+PFEXEC=$USRBIN/sudo
+
+PKGSEND=$USRBIN/pkgsend
+PKGLINT=$USRBIN/pkglint
+PKGMOGRIFY=$USRBIN/pkgmogrify
+PKGFMT=$USRBIN/pkgfmt
+PKGDEPEND=$USRBIN/pkgdepend
+
+BUNZIP2=$OOCEBIN/pbunzip2
+CMAKE=$OOCEBIN/cmake
+FD=$OOCEBIN/fd
+GZIP=$OOCEBIN/pigz
+JQ=$OOCEBIN/jq
+NINJA=$OOCEBIN/ninja
+RIPGREP=$OOCEBIN/rg
+CARGO=$OOCEBIN/cargo
+
+REALPATH=$GNUBIN/realpath
+
+FIND_ELF=$ONBLDBIN/find_elf
+CHECK_RTIME=$ONBLDBIN/check_rtime
+CTFDUMP=$ONBLDBIN/i386/ctfdump
+CTFCONVERT=$ONBLDBIN/i386/ctfconvert
+CTFSTABS=$ONBLDBIN/i386/ctfstabs
+CW=$ONBLDBIN/i386/cw
+GENOFFSETS=$ONBLDBIN/genoffsets
+CTF_FLAGS=
+CTF_CFLAGS="-gdwarf-2"
+GENOFFSETS_CFLAGS="
+    $CTF_CFLAGS
+    -W0,-xdbggen=no%usedonly
+"
+
+# Enable CTF by default from r151037 on
+[ $RELVER -ge 151037 ] && CTF_DEFAULT=1
 
 # Figure out number of logical CPUs for use with parallel gmake jobs (-j)
 # Default to 1.5*nCPUs as we assume the build machine is 100% devoted to
@@ -231,6 +258,18 @@ DONT_REMOVE_INSTALL_DIR=
 #############################################################################
 # C compiler options - these can be overridden by a build script
 #############################################################################
+
+# The list of options which define the build environment
+BUILDENV_OPTS="
+    CONFIGURE_CMD
+    CONFIGURE_OPTS CONFIGURE_OPTS_32 CONFIGURE_OPTS_64
+    CONFIGURE_OPTS_WS_32 CONFIGURE_OPTS_WS_64
+    CFLAGS CFLAGS32 CFLAGS64
+    CXXFLAGS CXXFLAGS32 CXXFLAGS64
+    CPPFLAGS CPPFLAGS32 CPPFLAGS64
+    LDFLAGS LDFLAGS32 LDFLAGS64
+"
+
 # isaexec(3C) variants
 # These variables will be passed to the build to construct multi-arch
 # binary and lib directories in DESTDIR
@@ -252,18 +291,23 @@ case $RELVER in
     151029|151030)      DEFAULT_GCC_VER=8; ILLUMOS_GCC_VER=4.4.4 ;;
     15103[12])          DEFAULT_GCC_VER=8; ILLUMOS_GCC_VER=7 ;;
     15103[34])          DEFAULT_GCC_VER=9; ILLUMOS_GCC_VER=7 ;;
-    15103[56])          DEFAULT_GCC_VER=10; ILLUMOS_GCC_VER=7 ;;
+    15103[5-9])         DEFAULT_GCC_VER=10; ILLUMOS_GCC_VER=7 ;;
     *) logerr "Unknown release '$RELVER', can't select compiler." ;;
 esac
 
 PYTHON2VER=2.7
 case $RELVER in
-    15103[3-9])         PYTHON3VER=3.7 ;;
+    15103[7-9])         PYTHON3VER=3.9 ;;
+    15103[3-6])         PYTHON3VER=3.7 ;;
     *)                  PYTHON3VER=3.5 ;;
 esac
 # Specify default Python version for building packages
 [ $RELVER -lt 151029 ] && DEFAULT_PYTHON_VER=$PYTHON2VER \
     || DEFAULT_PYTHON_VER=$PYTHON3VER
+
+# Default database versions to bundle into packages which use the libraries
+PGSQLVER=12
+MARIASQLVER=10.4
 
 # Options to turn compiler features on and off. Associative array keyed by
 # compiler version or _ for all versions.
@@ -287,7 +331,7 @@ typeset -A STANDARDS
 
 STANDARDS[POSIX]="-D_POSIX_C_SOURCE=200112L -D_POSIX_PTHREAD_SEMANTICS"
 STANDARDS[XPG3]="-D_XOPEN_SOURCE"
-STANDARDS[XPG4]="-D_XOPEN_SOURCE -D_XOPEN_VERSION=1"
+STANDARDS[XPG4]="-D_XOPEN_SOURCE -D_XOPEN_VERSION=4"
 STANDARDS[XPG4v2]="-D_XOPEN_SOURCE -D_XOPEN_SOURCE_EXTENDED=1"
 STANDARDS[XPG5]="-D_XOPEN_SOURCE=500 -D__EXTENSIONS__=1"
 STANDARDS[XPG6]="-D_XOPEN_SOURCE=600 -D__EXTENSIONS__=1"

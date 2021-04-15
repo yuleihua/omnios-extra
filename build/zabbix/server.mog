@@ -1,0 +1,29 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source. A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+
+# Copyright 2020 OmniOS Community Edition. All rights reserved.
+
+user ftpuser=false username=$(USER) uid=77 group=$(GROUP) \
+    gcos-field="$(PROG) User" home-dir=/var/$(PREFIX) password=NP
+
+<transform file path=$(PREFIX)/sbin/zabbix_server \
+    -> set refresh_fmri network/zabbix:server>
+
+dir path=var/$(OPREFIX) owner=root group=bin mode=0755
+dir path=var/$(PREFIX) owner=$(USER) group=$(GROUP) mode=0755
+
+link path=$(PREFIX)/sbin/zabbix_server target=zabbix_server.pgsql \
+	mediator=zabbix mediator-implementation=pgsql mediator-priority=vendor
+link path=$(PREFIX)/sbin/zabbix_server target=zabbix_server.mariadb \
+	mediator=zabbix mediator-implementation=mariadb
+
+depend type=require fmri=ooce/application/zabbix-agent
+depend type=require fmri=ooce/network/fping
+

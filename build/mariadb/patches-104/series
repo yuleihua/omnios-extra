@@ -5,3 +5,5 @@ si_kernel.patch
 08-dtrace-invalid-conversion.patch
 auth_socket.diff
 cfi.patch
+mariadb_config.patch
+fix_cmake_syntax_error.patch

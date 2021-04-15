@@ -12,20 +12,20 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition.  All rights reserved.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=minio-mc
 PKG=ooce/storage/minio-mc
-VER=2020-05-28T23-43-36Z
+VER=2021-03-12T03-36-59Z
 SUMMARY="MinIO client"
 DESC="A modern alternative to UNIX commands like ls, cat, cp, mirror, diff, "
 DESC+="find etc. It supports filesystems and Amazon S3 compatible cloud "
 DESC+="storage service (AWS Signature v2 and v4)"
 
 set_arch 64
-set_gover 1.13
+set_gover 1.16
 
 GOOS=illumos
 GOARCH=amd64

@@ -17,13 +17,14 @@
 . ../../lib/functions.sh
 
 PROG=minidlna
-VER=1.2.1
+VER=1.3.0
 VERHUMAN=$VER
 PKG=ooce/multimedia/minidlna
 SUMMARY="MiniDLNA"
 DESC="DLNA/UPnP-AV media server"
 
 set_arch 64
+set_standard XPG6
 
 OPREFIX=$PREFIX
 PREFIX+="/$PROG"
@@ -59,14 +60,14 @@ default_config() {
      || logerr "Failed to copy default config file"
 }
 
-CFLAGS+=" -D__OmniOS__ -D_XOPEN_SOURCE=500 -D__EXTENSIONS__ -I$OPREFIX/include"
+CPPFLAGS+=" -D__OmniOS__ -I$OPREFIX/include"
 LDFLAGS64+=" -L$OPREFIX/lib/$ISAPART64 -R$OPREFIX/lib/$ISAPART64 -lsocket -lsendfile"
 
 init
 prep_build
 download_source $PROG $PROG $VER
 patch_source
-build
+build -ctf
 default_config
 install_smf application $PROG.xml
 make_package

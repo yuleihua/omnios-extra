@@ -12,12 +12,12 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=mariadb
-VER=10.3.23
+VER=10.3.28
 PKG=ooce/database/mariadb-103
 SUMMARY="MariaDB"
 DESC="A community-developed, commercially supported fork of the "
@@ -36,7 +36,7 @@ RUNPATH=$VARPATH/run
 
 BUILD_DEPENDS_IPS="
     ooce/developer/cmake
-    ooce/compress/lz4
+    compress/lz4
 "
 
 XFORM_ARGS="
@@ -45,13 +45,14 @@ XFORM_ARGS="
     -DPROG=$PROG
     -DVERSION=$MAJVER
     -DsVERSION=$sMAJVER
+    -DUSER=mysql -DGROUP=mysql
 "
 
 set_arch 64
 
 CFLAGS64+=" -O3 -I$OPREFIX/include -I/usr/include/gssapi"
-CXXFLAGS64="$CFLAGS64 -R$OPREFIX/lib/amd64"
-LDFLAGS64+=" -L$OPREFIX/lib/amd64 -R$OPREFIX/lib/amd64"
+CXXFLAGS64="$CFLAGS64 -R$OPREFIX/lib/$ISAPART64"
+LDFLAGS64+=" -L$OPREFIX/lib/$ISAPART64 -R$OPREFIX/lib/$ISAPART64"
 
 CONFIGURE_OPTS_64=
 CONFIGURE_OPTS_WS_64="
@@ -93,24 +94,18 @@ CONFIGURE_OPTS_WS_64="
     -DWITH_PIC=1
 "
 
-save_function make_install _make_install
-make_install() {
-    _make_install
-    logcmd mkdir -p $DESTDIR/$CONFPATH
-    sed < $SRCDIR/files/my.cnf > $DESTDIR/$CONFPATH/my.cnf "
-        s/%MAJVER%/$MAJVER/g
-        s/%sMAJVER%/$sMAJVER/g
-    "
-}
-
 init
 download_source $PROG $PROG $VER
 patch_source
 prep_build cmake
 build
 strip_install
-install_smf database $PROG-$sMAJVER.xml
-make_package
+logcmd mkdir -p $DESTDIR/$CONFPATH
+xform files/my.cnf > $DESTDIR/$CONFPATH/my.cnf
+xform files/mariadb-template.xml > $TMPDIR/$PROG-$sMAJVER.xml
+xform files/mariadb-template > $TMPDIR/$PROG-$sMAJVER
+install_smf -oocemethod ooce $PROG-$sMAJVER.xml $PROG-$sMAJVER
+make_package server.mog
 clean_up
 
 # Vim hints

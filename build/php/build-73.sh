@@ -12,13 +12,13 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=php
 PKG=ooce/application/php-73
-VER=7.3.19
+VER=7.3.27
 SUMMARY="PHP 7.3"
 DESC="A popular general-purpose scripting language"
 
@@ -37,9 +37,8 @@ PATCHDIR=patches-$sMAJVER
 OPREFIX=$PREFIX
 PREFIX+=/$PROG-$MAJVER
 CONFPATH=/etc$PREFIX
-LOGPATH=/var/log$OPREFIX/$PROG
-VARPATH=/var$OPREFIX/$PROG
-RUNPATH=$VARPATH/run
+VARPATH=/var$PREFIX
+RUNPATH=/var$OPREFIX/$PROG/run
 
 BUILD_DEPENDS_IPS="
     ooce/database/bdb
@@ -54,6 +53,8 @@ XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
+    -DPKGROOT=$PROG-$MAJVER
+    -DMEDIATOR=$PROG -DMEDIATOR_VERSION=$MAJVER
     -DVERSION=$MAJVER
     -DsVERSION=$sMAJVER
 "
@@ -62,7 +63,7 @@ CONFIGURE_OPTS_64="
     --prefix=$PREFIX
     --sysconfdir=$CONFPATH
     --localstatedir=$VARPATH
-    --with-config-file-path=$CONFPATH/php.ini
+    --with-config-file-path=$CONFPATH
 
     --disable-libgcc
     --with-iconv

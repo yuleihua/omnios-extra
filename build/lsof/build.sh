@@ -12,13 +12,13 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition.  All rights reserved.
+# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=lsof
 PKG=ooce/file/lsof
-VER=4.93.2
+VER=4.94.0
 SUMMARY="List open files"
 DESC="Report a list of all open files and the processes that opened them"
 
@@ -37,6 +37,11 @@ XFORM_ARGS="
     -DOPREFIX=${OPREFIX#/}
     -DPROG=$PROG
     -DVERSION=$VER
+"
+
+MAKE_ARGS_WS="
+    -e
+    DEBUG=\"$CTF_CFLAGS $SSPFLAGS\"
 "
 
 configure64() {

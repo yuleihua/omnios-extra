@@ -12,53 +12,37 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=bat
-VER=0.15.4
+VER=0.18.0
 PKG=ooce/util/bat
-SUMMARY="cat alternative"
-DESC="A cat(1) clone with wings"
+SUMMARY="A cat clone with wings"
+DESC="A cat(1) clone with syntax highlighting and Git integration."
 
 # clang is a build-time requirement for 0.12.x
-CLANGVER=9.0
+CLANGVER=11.1
 
-BUILD_DEPENDS_IPS="ooce/developer/rust ooce/developer/clang-${CLANGVER//./}"
+BUILD_DEPENDS_IPS="
+    ooce/developer/rust
+    ooce/developer/clang-${CLANGVER//./}
+"
 
 set_arch 64
 
+# ansi_colours wants gnu-ar
+export AR="$USRBIN/gar"
 export LIBCLANG_PATH="$PREFIX/clang-$CLANGVER/lib"
-
-build() {
-    logmsg "Building 64-bit"
-    pushd $TMPDIR/$BUILDDIR >/dev/null
-    args="--release"
-    logcmd cargo build $args || logerr "build failed"
-    popd >/dev/null
-}
-
-install() {
-    logmsg "Installing"
-    pushd $TMPDIR/$BUILDDIR >/dev/null
-
-    logcmd mkdir -p $DESTDIR/$PREFIX/bin
-    logcmd cp target/release/bat $DESTDIR/$PREFIX/bin/bat || logerr "cp failed"
-
-    logcmd mkdir -p $DESTDIR/$PREFIX/share/man/man1
-    logcmd cp target/release/build/bat-*/out/assets/manual/bat.1 \
-        $DESTDIR/$PREFIX/share/man/man1/ || logerr "cp failed"
-
-    popd >/dev/null
-}
 
 init
 download_source $PROG v$VER
 patch_source
 prep_build
-build
-install
+build_rust
+install_rust
+strip_install
 make_package
 clean_up
 

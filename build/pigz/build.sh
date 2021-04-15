@@ -12,13 +12,13 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2019 OmniOS Community Edition.  All rights reserved.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=pigz
 PKG=ooce/compress/pigz
-VER=2.4
+VER=2.6
 SUMMARY=$PROG
 DESC="Parallel implementation of gzip for modern "
 DESC+="multi-processor, multi-core machines"
@@ -32,7 +32,14 @@ XFORM_ARGS="
     -DPROG=$PROG
 "
 
-configure64() { :; }
+configure64() {
+    MAKE_ARGS_WS="
+        -e
+        CFLAGS=\"$CFLAGS64 $CFLAGS\"
+        LDFLAGS=\"$LDFLAGS64 $LDFLAGS\"
+        LIBS=\"-lm -lz\"
+    "
+}
 
 make_install64() {
     logmsg "--- make install"

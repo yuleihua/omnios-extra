@@ -12,12 +12,12 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=nsd
-VER=4.3.1
+VER=4.3.6
 PKG=ooce/network/nsd
 SUMMARY="Authoritative DNS server"
 DESC="The NLnet Labs Name Server Daemon (NSD) is an authoritative "
@@ -35,8 +35,7 @@ XFORM_ARGS="
     -DOPREFIX=${OPREFIX#/}
     -DsPREFIX=${sPREFIX#/}
     -DPROG=$PROG
-    -DVERSION=$MAJVER
-    -DsVERSION=$sMAJVER
+    -DPKGROOT=$PROG-$MAJVER
 "
 
 BUILD_DEPENDS_IPS="ooce/library/libev"
@@ -59,7 +58,8 @@ CONFIGURE_OPTS="
 "
 
 # need msg_flags from struct msghdr
-CFLAGS+=" -D_XPG4_2"
+set_standard XPG4v2
+
 LDFLAGS="-L$OPREFIX/lib/$ISAPART64 -R$OPREFIX/lib/$ISAPART64"
 export MAKE
 

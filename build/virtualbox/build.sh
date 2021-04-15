@@ -12,13 +12,14 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=VirtualBox
 PKG=ooce/virtualization/virtualbox
-VER=6.1.10
+VER=6.1.18
+# virtualbox does currently not build with later gsoap versions
 GSOAPVER=2.8.102
 GSOAPDIR=gsoap-${GSOAPVER%.*}
 SUMMARY="VirtualBox"
@@ -66,6 +67,9 @@ RUN_DEPENDS_IPS="
 
 set_arch 64
 
+# virtualbox unpacks to directory w/o the trailing alpha character
+[[ $VER = *[a-z] ]] && set_builddir "$PROG-${VER:0: -1}"
+
 XFORM_ARGS="
     -DPREFIX=${PREFIX#/}
     -DOPREFIX=${OPREFIX#/}
@@ -91,7 +95,8 @@ CONFIGURE_OPTS="
 "
 # gsoap does not build with parallel make
 NO_PARALLEL_MAKE=1
-build_dependency gsoap $GSOAPDIR gsoap gsoap_$GSOAPVER ""
+# gsoap 2.8.103+ wants gnu tools
+PATH="/usr/gnu/bin:$PATH" build_dependency gsoap $GSOAPDIR gsoap gsoap_$GSOAPVER ""
 NO_PARALLEL_MAKE=
 export GSOAP=$DEPROOT/usr
 export LD_LIBRARY_PATH+=":$GSOAP/lib"
@@ -110,6 +115,10 @@ CONFIGURE_OPTS="
     --enable-vnc
     --enable-webservice
 "
+
+# virtualbox does currently not build with openjdk11
+# disable it for releases where openjdk11 is the default
+[ $RELVER -ge 151035 ] && CONFIGURE_OPTS+=" --disable-java"
 
 save_function configure64 _configure64
 configure64() {
@@ -156,6 +165,8 @@ VBoxVNC_INCS = /opt/ooce/include
 # configure does not properly detect include path or libraries for gsoap
 VBOX_GSOAP_CXX_LIBS = libgsoapssl++ libz
 VBOX_GSOAP_INCS = $DEPROOT/usr/include
+
+VBOX_DO_STRIP =
 
 EOF
     logmsg "--- building VirtualBox"
@@ -222,7 +233,7 @@ make_install() {
 
 download_source $PROG $PROG $VER
 patch_source
-build
+build -noctf
 make_package vbox.mog
 
 # package the additions

@@ -12,7 +12,7 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2019 OmniOS Community Edition.  All rights reserved.
+# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
@@ -37,7 +37,7 @@ init
 download_source $PROG $PROG $VER
 patch_source
 prep_build
-build
+build -noctf    # C++
 make_package
 clean_up
 

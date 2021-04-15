@@ -9,13 +9,15 @@
 # source.  A copy of the CDDL is also available via the Internet at
 # http://www.illumos.org/license/CDDL.
 
-# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 
 __SCRIPTDIR="${0%/*}"
 
 cd $__SCRIPTDIR/..
 
 [ ! -d build -o ! -x build/buildctl ] && echo "Cannot find directory" && exit 1
+
+export PATH=/usr/bin:/opt/ooce/bin
 
 IPSROOT=https://pkg.omnios.org
 
@@ -30,13 +32,13 @@ c_reset="`/usr/gnu/bin/tput sgr0`"
 setup()
 {
     # Determine the current bloody release version as r1510XX.0
-    branch=`pkgrepo -s $IPSROOT/bloody/core list -H -F json SUNWcs \
+    bbranch=`pkgrepo -s $IPSROOT/bloody/core list -H -F json SUNWcs \
         | jq -r '.[0] | .branch'`
-    branch=${branch%%.*}
-    [ -z "$branch" ] && echo "Could not retrieve bloody branch" && exit 1
-    #echo "Bloody branch: $branch"
-    ((lts = branch - (branch + 2) % 8))
-    branches=(bloody r$((branch - 1)) r$((branch - 3)) r$lts)
+    bbranch=${bbranch%%.*}
+    [ -z "$bbranch" ] && echo "Could not retrieve bloody branch" && exit 1
+    #echo "Bloody branch: $bbranch"
+    ((lts = bbranch - (bbranch + 2) % 8))
+    branches=(bloody r$((bbranch - 1)) r$((bbranch - 3)) r$lts)
     #echo "Branches: ${branches[@]}"
 }
 
@@ -46,6 +48,26 @@ ord26()
     ((asc -= 64))
     [ $asc -gt 32 ] && ((asc -= 32))
     echo $asc
+}
+
+# This is a crude version of the function in funtions.sh that assumes
+# omniosorg for the github organisation. It may need extending in the
+# future.
+github_latest() {
+    typeset pkg="$1"
+    typeset ver="$2"
+
+    typeset ep=https://api.github.com/repos/omniosorg/${pkg##*/}/releases
+
+    typeset filter="map(select (.draft == false)"
+    if [ "$ver" != github-latest-prerelease ]; then
+        filter+=" | select (.prerelease == false)"
+    fi
+    filter+=") | first | .tag_name"
+
+    typeset tag=`curl -s $ep | jq -r "$filter"`
+
+    echo "${tag#v}"
 }
 
 cf()
@@ -77,11 +99,38 @@ add_target()
                 q
             }'`"
         case $pkg:$ver in
+            ooce/network/openvpn-auth-ldap:*)
+                ver="`grep '^AUTHLDAPVER=' $build | cut -d= -f2`"
+                ;;
             ooce/runtime/expect:*)
                 ver="`grep '^EXPECTVER=' $build | cut -d= -f2`"
                 ;;
             */ntfs-3g:*)
                 ver=${ver//AR/}
+                ;;
+            */cups:*)
+                ver=${ver//op/.}
+                ;;
+            */munin:*)
+                pkg+=-server
+                ;;
+            */zabbix:*)
+                pkg+=-server
+                ;;
+            */modules/subversion:*)
+                aver="`grep '^APACHEVER=' $build | cut -d= -f2`"
+                pkg=ooce/server/apache-${aver//./}/modules/subversion
+                ;;
+            */php-XX/*:*)
+                pver=`grep '^PHPVERSIONS=' $build | cut -d= -f2 \
+                    | cut -d '"' -f2`
+                for p in $pver; do
+                    targets[${pkg/XX/${p//./}}]=$ver
+                done
+                pkg=
+                ;;
+            *:github-latest*)
+                ver=`github_latest $pkg $ver`
                 ;;
         esac
 
@@ -98,7 +147,7 @@ add_target()
         ## Strip leading zeros in version components.
         ver=`echo $ver | sed -e 's/\.0*\([1-9]\)/.\1/g;'`
 
-        targets[$pkg]=$ver
+        [ -n "$pkg" ] && targets[$pkg]=$ver
     elif [[ $build = *.p5m ]]; then
         egrep -q 'pkg.obsolete.*true' $build && return
         egrep -q 'pkg.renamed.*true' $build && return
@@ -113,11 +162,14 @@ add_target()
 
 extract_pkgs()
 {
-    grep 'PKG=' $1 | grep -v '##IGNORE##' | sed -e '
-        s/^ +//
-        s/ +#.+//
-        s/=/ /g
-    ' | nawk '$1 == "PKG" { print $2 }'
+    sed -nE '
+        /##IGNORE##/d
+        /\<PKG=[^[:space:]]+[[:space:]]*(#.*)?$/ {
+            s/.*PKG=/PKG=/
+            s/[[:space:]]+#.+//
+            s/=/ /g
+            p
+    }' $1 | nawk '$1 == "PKG" { print $2 }'
 }
 
 add_buildscripts()
@@ -160,48 +212,71 @@ audit()
         ------- ------- ------ ------- ------- -------
     for pkg in "${!targets[@]}"; do
         ver="${targets[$pkg]}"
-        str=`printf "%-${pkgs}s %${vers}s" "${pkg#ooce/}" "$ver"`
+        spkg=${pkg#ooce/}
+        str=`printf "%-${pkgs}s %${vers}s" "${spkg: -$pkgs}" "$ver"`
         ok=1
         for b in "${branches[@]}"; do
+            [ $b = bloody ] && r=$bbranch || r=${b#r}
             nameref data=$b
             pver="${data[$pkg]}"
             cf "$ver" "$pver"
             case $? in
                 0)  c="$c_highlight" ;;
                 1)  c="$c_error"
-                    if [ -z "${pver}" ]; then
-                        case $pkg in
-                            # socat is not published after r151030
-                            */socat) ;;
-                            # zadm is not published until r151034
-                            */zadm) ;;
-                            # gyp is not published until r151035
-                            */gyp) ;;
-                            # clang/llvm-80 is not published after r151032
-                            */clang-80|*/llvm-80) ;;
-                            *) ok=0 ;;
-                        esac
-                    else
-                        ok=0
-                    fi
+                    case $pkg:$pver in
+                        # socat was not published for r151032/34 and was added
+                        # back as a renamed package in r151035
+                        */socat:) [[ $r = 15103[24] ]] || ok=0 ;;
+                        # zadm is not published until r151034
+                        */zadm:) [ $r -lt 151034 ] || ok=0 ;;
+                        # openvpn-auth-ldap is not published until r151034
+                        */openvpn-auth-ldap:) [ $r -lt 151034 ] || ok=0 ;;
+                        # radare2 is not published until r151034
+                        */radare2:) [ $r -lt 151034 ] || ok=0 ;;
+                        # gyp is not published until r151035
+                        */gyp:) [ $r -lt 151035 ] || ok=0 ;;
+                        # dav1d is not published until r151036
+                        */dav1d:) [ $r -lt 151036 ] || ok=0 ;;
+                        # clang/llvm-80, clang/llvm/compiler-rt-90 and lxadm
+                        # are not published after r151034
+                        */clang-[89]0:|*/llvm-[89]0:|*/compiler-rt-90:|*/lxadm:)
+                            [ $r -gt 151034 ] || ok=0 ;;
+                        # X11 headers/libraries are not published until r151035
+                        */x11/*:) [ $r -lt 151035 ] || ok=0 ;;
+                        # pango is stuck on 1.44 on r151030 due to the
+                        # older version of glib2 there.
+                        */pango:1.44*)
+                            [ $r = 151030 ] || ok=0
+                            ;;
+                        # pango is stuck on 1.47 on r151034 due to the older
+                        # version of meson there.
+                        */pango:1.47*)
+                            [ $r = 151034 ] || ok=0
+                            ;;
+                        *) ok=0 ;;
+                    esac
                     ;;
                 2)  c="$c_banner"; ok=0 ;;
             esac
             str+=`printf " %s%${vers}s" "$c" "${pver:---}"`
         done
-        if [ $ok -eq 0 -o $new -eq 0 ]; then
+        if [ $ok -eq 0 -o $full -eq 1 ] && \
+            [[ -z "$pattern" || "$pkg" == *${pattern}* ]]; then
             echo "$str$c_reset"
         fi
     done
 }
 
-new=0
-while getopts "n" opt; do
+USAGE="[+NAME?audit --- check packages against IPS repositories]"
+USAGE+="[f:full?Show all packages, not just problems]"
+USAGE+="[p:pkg?Show only packages matching pattern]:[<pattern>]"
+
+full=0
+pattern=
+while getopts "$USAGE" opt; do
     case $opt in
-        n)  new=1 ;;
-        *)  echo "Syntax: audit [-n]"
-            exit 1
-            ;;
+        f)  full=1 ;;
+        p)  full=1; pattern="$OPTARG" ;;
     esac
 done
 

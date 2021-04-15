@@ -18,7 +18,7 @@
 
 PROG=compiler-rt
 PKG=ooce/developer/compiler-rt-100
-VER=10.0.0
+VER=10.0.1
 SUMMARY="LLVM runtime libraries"
 DESC="Implementation for the runtime compiler support libraries"
 
@@ -49,7 +49,7 @@ init
 download_source $PROG $BUILDDIR
 patch_source
 prep_build cmake
-build
+build -noctf
 make_package
 clean_up
 

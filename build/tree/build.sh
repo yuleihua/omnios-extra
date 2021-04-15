@@ -12,7 +12,7 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2020 OmniOS Community Edition.  All rights reserved.
+# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
@@ -30,7 +30,7 @@ configure64() { :; }
 
 MAKE_ARGS_WS="
     -e
-    CFLAGS=\"$CFLAGS $CFLAGS64\"
+    CFLAGS=\"$CFLAGS $CFLAGS64 $CTF_CFLAGS\"
     LDFLAGS=\"$LDFLAGS $LDFLAGS64\"
 "
 

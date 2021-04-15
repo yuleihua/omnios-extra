@@ -12,12 +12,12 @@
 # http://www.illumos.org/license/CDDL.
 # }}}
 
-# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
 
 . ../../lib/functions.sh
 
 PROG=fd
-VER=7.3.0
+VER=8.2.1
 PKG=ooce/util/fd
 SUMMARY="find utility"
 DESC="fd is a simple, fast and user-friendly alternative to find"
@@ -31,33 +31,13 @@ BUILD_DEPENDS_IPS=ooce/developer/rust
 
 set_arch 64
 
-build() {
-    logmsg "Building 64-bit"
-    pushd $TMPDIR/$BUILDDIR >/dev/null
-    args="--release"
-    logcmd cargo build $args || logerr "build failed"
-    popd >/dev/null
-}
-
-install() {
-    logmsg "Installing"
-    pushd $TMPDIR/$BUILDDIR >/dev/null
-
-    logcmd mkdir -p $DESTDIR/$PREFIX/bin
-    logcmd cp target/release/fd $DESTDIR/$PREFIX/bin/fd || logerr "cp failed"
-
-    logcmd mkdir -p $DESTDIR/$PREFIX/share/man/man1
-    logcmd cp doc/fd.1 $DESTDIR/$PREFIX/share/man/man1/ || logerr "cp failed"
-
-    popd >/dev/null
-}
-
 init
-download_source $PROG rust$PROG $VER
+download_source $PROG v$VER
 patch_source
 prep_build
-build
-install
+build_rust
+install_rust
+strip_install
 make_package
 clean_up
 
